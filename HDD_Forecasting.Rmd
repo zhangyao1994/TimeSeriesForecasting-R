@@ -16,6 +16,9 @@ options(scipen = 999)
 library(TTR)
 library(forecast)
 library(tseries)
+library(timetk)
+library(Rcpp)
+library(prophet)
 ```
 
 ## HDD Forecasting
@@ -162,31 +165,32 @@ HDD_data %>% group_by(Fiscal_Qtr) %>%
 
 
 ```{r Quarterly Forecasting}
+forecastPeriodLen <- 4
+
 # ETS
 q_ets = ets(HDDQuarterlytimeseries)
-f_ets = forecast(q_ets, h=4) # forecast 3 months into the future
+f_ets = forecast(q_ets, h=forecastPeriodLen) # forecast 3 months into the future
 plot(f_ets, 
     ylim = c(0, 2500000))
 
 # ARIMA
 q_aa = auto.arima(HDDQuarterlytimeseries)
-f_aa = forecast(q_aa, h=4)
+f_aa = forecast(q_aa, h=forecastPeriodLen)
 plot(f_aa, 
     ylim = c(0, 2500000))
 
 # tslm
 fit1 <- tslm(HDDQuarterlytimeseries ~ trend + season, lambda=0)
-fcast1 <- forecast(fit1,h=4)
+fcast1 <- forecast(fit1,h=forecastPeriodLen)
 plot(fcast1, 
     ylim = c(0, 2500000))
 
 # TBATS
 m_tbats = tbats(HDDQuarterlytimeseries)
-f_tbats = forecast(m_tbats, h=4)
+f_tbats = forecast(m_tbats, h=forecastPeriodLen)
 plot(f_tbats, 
     ylim = c(0, 2500000))
 
-forecastPeriodLen <- 4
 trainingData <- HDDQuarterlytimeseries
 # Simple exponential smoothing: Level Only
 model1 <- hw(trainingData, h=(forecastPeriodLen), beta=NULL, gamma=NULL) # h is the no. periods to forecast
@@ -214,15 +218,23 @@ How to test if a time series is stationary?
 Use Augmented Dickey-Fuller Test (adf test). A p-Value of less than 0.05 in adf.test() indicates that it is stationary.
 
 ```{r Stationary Tests}
+# Quarterly
 tsData <- HDDQuarterlytimeseries
 adf.test(tsData) # p-value < 0.05 indicates the TS is stationary
 
 kpss.test(tsData) # the null hypothesis and must be one of "Level" (default) or "Trend".
 
 # So the quarterly sales are stationary.
+
+# Monthly
+tsData <- HDDMonthlytimeseries
+adf.test(tsData) # p-value < 0.05 indicates the TS is stationary
+
+kpss.test(tsData) # the null hypothesis and must be one of "Level" (default) or "Trend".
 ```
 
 ```{r Decompose Quarterly Sales}
+# Quarterly
 tsData <- HDDQuarterlytimeseries
 
 decomposedRes <- decompose(tsData, type="mult") # use type = "additive" for additive components
@@ -246,7 +258,14 @@ It is used commonly to determine if the time series is stationary or not. A stat
 
 Partial Autocorrelation is the correlation of the time series with a lag of itself, with the linear dependence of all the lags between them removed.
 ```{r Correlatiion}
+# Quarterly
 tsData <- HDDQuarterlytimeseries
+# both acf() and pacf() generates plots by default
+acfRes <- acf(tsData) # autocorrelation
+pacfRes <- pacf(tsData)  # partial autocorrelation
+
+# Monthly
+tsData <- HDDMonthlytimeseries
 # both acf() and pacf() generates plots by default
 acfRes <- acf(tsData) # autocorrelation
 pacfRes <- pacf(tsData)  # partial autocorrelation
