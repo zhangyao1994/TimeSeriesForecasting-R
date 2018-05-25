@@ -14,6 +14,8 @@ library(ggthemes)
 library(ggrepel)
 options(scipen = 999)
 library(TTR)
+library(forecast)
+library(tseries)
 ```
 
 ## HDD Forecasting
@@ -53,6 +55,94 @@ plot(HDDMonlytimeseriesseasonallyadjusted,
     ylim = c(0, 1000000))
 ```
 
+Model 1: Exponential State Smoothing
+The ets() function in the forecast package fits exponential state smoothing (ETS) models. This function automatically optimizes the choice of model and necessary parameters. All you have to do is providing it with a time series.
+
+Let's use it and then make a forecast for the next 3 months.
+```{r Monthly Exponential State Smoothing}
+m_ets = ets(HDDMonthlytimeseries)
+f_ets = forecast(m_ets, h=12) # forecast 3 months into the future
+plot(f_ets, 
+    ylim = c(0, 1000000))
+```
+
+Model 2: ARIMA
+The auto.arima() function provides another modeling method. More info on the ARIMA model can be found here. The auto.arima() function automatically searches for the best model and optimizes the parameters. Using the auto.arima() is almost always better than calling the Arima() function directly.
+
+Let's give it a shot.
+```{r Monthly ARIMA}
+m_aa = auto.arima(HDDMonthlytimeseries)
+f_aa = forecast(m_aa, h=12)
+plot(f_aa, 
+    ylim = c(0, 1000000))
+
+# tslm
+fit1 <- tslm(HDDMonthlytimeseries ~ trend + season, lambda=0)
+fcast1 <- forecast(fit1,h=12)
+plot(fcast1, 
+    ylim = c(0, 1000000))
+```
+
+Model 3: TBATS
+The last model we're going to train is a TBATS model. This model is designed for use when there are multiple cyclic patterns (e.g. daily, weekly and yearly patterns) in a single time series. Maybe it will be able to detect complicated patterns in our time series.
+Time series with multiple-seasonality can be modelled with this method. Since this is a computationally intensive procedure, the in-built parallel processing facility may be leveraged.
+```{r Monthly TBATS}
+m_tbats = tbats(HDDMonthlytimeseries)
+f_tbats = forecast(m_tbats, h=12)
+plot(f_tbats, 
+    ylim = c(0, 1000000))
+```
+
+Model comparison
+We'll use AIC to compare the different models. AIC is common method for determining how well a model fits the data, while penalizing more complex models. The model with the smallest AIC is the best fitting model.
+```{r Model comparison}
+barplot(c(ETS=m_ets$aic, ARIMA=m_aa$aic, TBATS=m_tbats$AIC, TSLM=fcast1$AIC),
+    col="light blue",
+    ylab="AIC")
+```
+
+We see that the ARIMA model performs the best. 
+
+```{r Model Cross validation}
+k <- 13
+n <- length(HDDMonthlytimeseries)
+mae1 <- mae2 <- mae3 <- matrix(NA,n-k-1,12)
+for(i in 1:(n-k-1))
+{
+  xshort <- window(HDDMonthlytimeseries,end=2018+i/12)
+  xnext <- window(HDDMonthlytimeseries,start=2018+(1+i)/12,end=2018+(3+i)/12)
+  fit1 <- tslm(xshort ~ trend + season, lambda=0)
+  fcast1 <- forecast(fit1,h=3)
+  fit2 <- auto.arima(xshort, lambda=0)
+  fcast2 <- forecast(fit2,h=3)
+  fit3 <- ets(xshort)
+  fcast3 <- forecast(fit3,h=3)
+  mae1[i,] <- c(abs(fcast1$mean-xnext),rep(NA,12-length(xnext)))
+  mae2[i,] <- c(abs(fcast2$mean-xnext),rep(NA,12-length(xnext)))
+  mae3[i,] <- c(abs(fcast3$mean-xnext),rep(NA,12-length(xnext)))
+}
+plot(1:12,colSums(mae3,na.rm=TRUE),type="l",col=4,xlab="horizon",ylab="MAE")
+lines(1:12,colSums(mae2,na.rm=TRUE),type="l",col=3)
+lines(1:12,colSums(mae1,na.rm=TRUE),type="l",col=2)
+legend("topright",legend=c("LM","ARIMA","ETS"),col=2:4,lty=1)
+```
+
+We see that the ARIMA model has the lowest errors (MAE).
+
+```{r Test ARIMA monthly}
+# There are totally 27 months
+train = HDDMonthlytimeseries[1:18]
+test = HDDMonthlytimeseries[19:24]
+arma_fit <- auto.arima(train)
+arma_forecast <- forecast(arma_fit, h =9)
+arma_fit_accuracy <- accuracy(arma_forecast, test)
+arma_fit; arma_forecast; arma_fit_accuracy
+plot(arma_forecast, 
+    ylim = c(0, 1000000))
+#lines(HDDMonthlytimeseries)
+```
+
+
 
 I think the quarterly data is better than the seasonally adjusted monthly data.
 Thus, I would like to forecast the quarterly sales first.
@@ -64,9 +154,101 @@ HDDQuarterlytimeseries <- ts(temp_quarterly$Fiscal_Qtr_QTY,frequency=4, start=c(
 HDDQuarterlytimeseries
 
 plot.ts(HDDQuarterlytimeseries, 
-    ylim = c(0, 2200000))
+    ylim = c(0, 2500000))
 
 HDD_data %>% group_by(Fiscal_Qtr) %>%
   mutate(Fiscal_Qtr_QTY=sum(QTY)) -> HDD_quarterly
+```
+
+
+```{r Quarterly Forecasting}
+# ETS
+q_ets = ets(HDDQuarterlytimeseries)
+f_ets = forecast(q_ets, h=4) # forecast 3 months into the future
+plot(f_ets, 
+    ylim = c(0, 2500000))
+
+# ARIMA
+q_aa = auto.arima(HDDQuarterlytimeseries)
+f_aa = forecast(q_aa, h=4)
+plot(f_aa, 
+    ylim = c(0, 2500000))
+
+# tslm
+fit1 <- tslm(HDDQuarterlytimeseries ~ trend + season, lambda=0)
+fcast1 <- forecast(fit1,h=4)
+plot(fcast1, 
+    ylim = c(0, 2500000))
+
+# TBATS
+m_tbats = tbats(HDDQuarterlytimeseries)
+f_tbats = forecast(m_tbats, h=4)
+plot(f_tbats, 
+    ylim = c(0, 2500000))
+
+forecastPeriodLen <- 4
+trainingData <- HDDQuarterlytimeseries
+# Simple exponential smoothing: Level Only
+model1 <- hw(trainingData, h=(forecastPeriodLen), beta=NULL, gamma=NULL) # h is the no. periods to forecast
+plot(model1, 
+    ylim = c(0, 2500000))
+accuracy(model1) # calculate accuracy measures
+
+# Double Exponential smoothing: Level and Trend components
+model2 <- hw(trainingData,  h=(forecastPeriodLen), gamma=NULL)
+plot(model2, 
+    ylim = c(0, 2500000))
+accuracy(model2) # calculate accuracy measures
+
+# Holt Winters: Level, Trend and Seasonality
+model3 <- hw(trainingData,  h=(forecastPeriodLen))
+plot(model3, 
+    ylim = c(0, 2500000))
+accuracy(model3) # calculate accuracy measures
+
+# The above three models are the same.
+
+```
+
+How to test if a time series is stationary?
+Use Augmented Dickey-Fuller Test (adf test). A p-Value of less than 0.05 in adf.test() indicates that it is stationary.
+
+```{r Stationary Tests}
+tsData <- HDDQuarterlytimeseries
+adf.test(tsData) # p-value < 0.05 indicates the TS is stationary
+
+kpss.test(tsData) # the null hypothesis and must be one of "Level" (default) or "Trend".
+
+# So the quarterly sales are stationary.
+```
+
+```{r Decompose Quarterly Sales}
+tsData <- HDDQuarterlytimeseries
+
+decomposedRes <- decompose(tsData, type="mult") # use type = "additive" for additive components
+plot (decomposedRes) # see plot below
+stlRes <- stl(tsData, s.window = "periodic")
+
+
+decomposedRes <- decompose(tsData, type="additive") # use type = "additive" for additive components
+plot (decomposedRes) # see plot below
+stlRes <- stl(tsData, s.window = "periodic")
+
+# Two types are very similar.
+```
+
+What is Autocorrelation and Partial-Autocorrelation?
+Autocorrelation is the correlation of a Time Series with lags of itself. This is a significant metric because,
+
+It shows if the previous states (lagged observations) of the time series has an influence on the current state. In the autocorrelation chart, if the autocorrelation crosses the dashed blue line, it means that specific lag is significantly correlated with current series. For example, in autocorrelation chart of AirPassengers - the top-left chart (below), there is significant autocorrelation for all the lags shown on x-axis.
+
+It is used commonly to determine if the time series is stationary or not. A stationary time series will have the autocorrelation fall to zero fairly quickly but for a non-stationary series it drops gradually.
+
+Partial Autocorrelation is the correlation of the time series with a lag of itself, with the linear dependence of all the lags between them removed.
+```{r Correlatiion}
+tsData <- HDDQuarterlytimeseries
+# both acf() and pacf() generates plots by default
+acfRes <- acf(tsData) # autocorrelation
+pacfRes <- pacf(tsData)  # partial autocorrelation
 ```
 
