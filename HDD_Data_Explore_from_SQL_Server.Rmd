@@ -1,7 +1,7 @@
 ---
 title: "HDD Data Exploratory Analytics from SQL Server"
 author: "Yao"
-date: "May 23, 2018"
+date: "May 23-25, 2018"
 output: html_document
 ---
 
@@ -9,6 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(plotly)
+library(scales)
+library(ggthemes)
+library(ggrepel)
+options(scipen = 999)
 ```
 
 ## Load Database from SQL Server
@@ -34,10 +38,14 @@ ORDER BY Order_Date_week
 
 
 ```{r plot}
-Weekly_HDD_QTY_OnlyDetails %>% 
+Weekly_HDD_QTY_OnlyDetails %>% na.omit %>%
   ggplot(aes(x=Order_Date_week,y=HDD_QTY,group=1)) + 
-  geom_point() +
-  geom_line() +
-  ggtitle('201701-201915') +
-  theme(axis.text.x=element_blank(),legend.position="none")
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Weekly Sales 201701-201915', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('201701','201801', '201901')) +
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
 ```

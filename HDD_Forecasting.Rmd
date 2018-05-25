@@ -1,0 +1,72 @@
+---
+title: "HDD Forecasting"
+author: "Yao"
+date: "May 24-25, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(scales)
+library(ggthemes)
+library(ggrepel)
+options(scipen = 999)
+library(TTR)
+```
+
+## HDD Forecasting
+I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
+```{r load the data}
+HDD_data <- read.csv("~/HDD_FY16_FY19M03_Transformed_filledAllFiscalQuarter.csv") %>% filter(Fiscal_Yr %in% c('FY17','FY18','FY19'))
+```
+
+Sometimes the time series data set that you have may have been collected at regular intervals that were less than one year, for example, monthly or quarterly. In this case, you can specify the number of times that data was collected per year by using the 'frequency' parameter in the ts() function. For monthly time series data, you set frequency=12, while for quarterly time series data, you set frequency=4.
+
+```{r timeseries monthly}
+HDD_data %>% group_by(Fiscal_Mo) %>%
+  summarise(Fiscal_Mo_QTY=sum(QTY)) -> selecteddata
+HDDMonthlytimeseries <- ts(selecteddata$Fiscal_Mo_QTY,frequency=12, start=c(2017,1))
+HDDMonthlytimeseries
+
+plot.ts(HDDMonthlytimeseries, 
+    ylim = c(0, 1000000))
+
+# # Data Transformatino - Log
+# logHDDtimeseries <- log(HDDtimeseries)
+# plot.ts(logHDDtimeseries)
+# This is not needed for our data
+
+HDDMonthlytimeseriesSMA3 <- SMA(HDDMonthlytimeseries,n=3)
+plot.ts(HDDMonthlytimeseriesSMA3, 
+    ylim = c(0, 1000000))
+
+# Decomposing Seasonal data
+HDDMonlytimeseriesComponents <- decompose(HDDMonthlytimeseries)
+HDDMonlytimeseriesComponents$seasonal
+
+plot(HDDMonlytimeseriesComponents)
+
+HDDMonlytimeseriesseasonallyadjusted <- HDDMonthlytimeseries - HDDMonlytimeseriesComponents$seasonal
+plot(HDDMonlytimeseriesseasonallyadjusted, 
+    ylim = c(0, 1000000))
+```
+
+
+I think the quarterly data is better than the seasonally adjusted monthly data.
+Thus, I would like to forecast the quarterly sales first.
+
+```{r Quaterly Forecasting}
+HDD_data %>% group_by(Fiscal_Qtr) %>%
+  summarise(Fiscal_Qtr_QTY=sum(QTY)) -> temp_quarterly
+HDDQuarterlytimeseries <- ts(temp_quarterly$Fiscal_Qtr_QTY,frequency=4, start=c(2017,1))
+HDDQuarterlytimeseries
+
+plot.ts(HDDQuarterlytimeseries, 
+    ylim = c(0, 2200000))
+
+HDD_data %>% group_by(Fiscal_Qtr) %>%
+  mutate(Fiscal_Qtr_QTY=sum(QTY)) -> HDD_quarterly
+```
+

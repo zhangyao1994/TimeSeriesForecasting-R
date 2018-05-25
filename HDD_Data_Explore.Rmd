@@ -1,7 +1,7 @@
 ---
 title: "HDD Data Exploratory Analytics"
 author: "Yao"
-date: "May 23, 2018 - May 24, 2018"
+date: "May 23, 2018 - May 25, 2018"
 output: html_document
 ---
 
@@ -11,6 +11,7 @@ library(tidyverse)
 library(plotly)
 library(scales)
 library(ggthemes)
+library(ggrepel)
 options(scipen = 999)
 ```
 
@@ -18,8 +19,12 @@ options(scipen = 999)
 
 I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
 ```{r load the data}
-HDD_data <- read.csv("~/HDD_FY16_FY19M03_Transformed.csv") %>% filter(Fiscal_Yr %in% c('FY17','FY18','FY19'))
-head(HDD_data)
+HDD_data <- read.csv("~/HDD_FY16_FY19M03_Transformed_filledAllFiscalQuarter.csv") %>% filter(Fiscal_Yr %in% c('FY17','FY18','FY19'))
+# head(HDD_data)
+apply(HDD_data, 2, function(x) any(is.na(x)))
+# Columns have NA: Interface_speed, RPM, Form_Factor. I can ignore the missing dates for now.
+#which(is.na(HDD_data$Fiscal_Qtr))
+#HDD_data[8713,]
 ```
 
 ```{r plot overall HDD_QTY}
@@ -31,7 +36,7 @@ p_week <- HDD_data %>% group_by(Fiscal_Wk) %>%
   geom_line(size = 1.5) +
   labs(title = 'HDD Weekly Sales FY17-FY19M03', x = "Fiscal Week", y = "Part Quantity") + 
   theme_minimal(base_size = 18) + 
-  #scale_color_tableau('tableau10medium') + 
+  scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16W01','FY17W01', 'FY18W01', 'FY19W01')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
@@ -46,7 +51,7 @@ p_month <- HDD_data %>% group_by(Fiscal_Mo) %>%
   geom_line(size = 1.5) +
   labs(title = 'HDD Monthly Sales FY17-FY19M03', x = "Fiscal Month", y = "Part Quantity") + 
   theme_minimal(base_size = 18) + 
-  #scale_color_tableau('tableau10medium') + 
+  scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
@@ -56,15 +61,14 @@ p_month
 # The monthly plot is good to see some patterns.
 
 # HDD Quarterly Sales
-temp_quarter <- HDD_data %>% group_by(Fiscal_Qtr) %>%
-  mutate(Fiscal_Qtr_QTY=sum(QTY)) 
-p_quarter <-
-  ggplot(na.omit(temp_quarter), aes(x=Fiscal_Qtr,y=Fiscal_Qtr_QTY,group=1, colour=Fiscal_Yr)) +
+p_quarter <- HDD_data %>% group_by(Fiscal_Qtr) %>%
+  mutate(Fiscal_Qtr_QTY=sum(QTY)) %>%
+  ggplot(aes(x=Fiscal_Qtr,y=Fiscal_Qtr_QTY,group=1, colour=Fiscal_Yr)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = 'HDD Quarterly Sales FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity") + 
   theme_minimal(base_size = 18) + 
-  #scale_color_tableau('tableau10medium') + 
+  scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
@@ -94,7 +98,7 @@ ggplotly(p_month)
 
 ```{r by Region}
 # HDD Monthly Sales by Region FY17-FY19M03
-HDD_data %>% 
+p_Monthly_Region <- HDD_data %>% 
   group_by(Region,Fiscal_Mo) %>%
   mutate(Region_Fiscal_Mo_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Mo,y=Region_Fiscal_Mo_QTY,group=Region, colour=Region)) +
@@ -106,11 +110,12 @@ HDD_data %>%
   scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Monthly_Region
 
 # HDD Quarterly Sales by Region FY17-FY19M03
-HDD_data %>% 
+p_Quarterly_Region <- HDD_data %>% 
   group_by(Region,Fiscal_Qtr) %>%
-  mutate(Region_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Region_Fiscal_Qtr_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Qtr,y=Region_Fiscal_Qtr_QTY,group=Region, colour=Region)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -120,6 +125,7 @@ HDD_data %>%
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Quarterly_Region
 
 ```
 
@@ -130,9 +136,9 @@ AMF and APJ occupy the majoraty of the sales, and they also increased in fiscal 
 
 ```{r by Interface_All}
 # HDD Monthly Sales by Interface_All FY17-FY19M03
-HDD_data %>% 
+p_Monthly_InterfaceAll <- HDD_data %>% 
   group_by(Interface_All,Fiscal_Mo) %>%
-  mutate(Interface_All_Fiscal_Mo_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Interface_All_Fiscal_Mo_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Mo,y=Interface_All_Fiscal_Mo_QTY,group=Interface_All, colour=Interface_All)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -142,11 +148,12 @@ HDD_data %>%
   scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Monthly_InterfaceAll
 
-# HDD Quaterly Sales by Interface_All FY17-FY19M03
-HDD_data %>% 
+# HDD Quarterly Sales by Interface_All FY17-FY19M03
+p_Quarterly_InterfaceAll <- HDD_data %>% 
   group_by(Interface_All,Fiscal_Qtr) %>%
-  mutate(Interface_All_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Interface_All_Fiscal_Qtr_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Qtr,y=Interface_All_Fiscal_Qtr_QTY,group=Interface_All, colour=Interface_All)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -156,6 +163,7 @@ HDD_data %>%
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Quarterly_InterfaceAll
 
 ```
 
@@ -167,33 +175,34 @@ SAS6G and SATA have very small quantities.
 
 ```{r by RPM}
 # HDD Monthly Sales by RPM FY17-FY19M03
-p <- HDD_data %>% 
+p_Monthly_RPM <- HDD_data %>% 
   group_by(RPM,Fiscal_Mo) %>%
-  mutate(RPM_Fiscal_Mo_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(RPM_Fiscal_Mo_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Mo,y=RPM_Fiscal_Mo_QTY,group=factor(RPM), colour=factor(RPM))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = 'HDD Monthly Sales by RPM FY17-FY19M03', x = "Fiscal Month", y = "Part Quantity", colour ='RPM') + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
+  #scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
-p
+p_Monthly_RPM
 
-# HDD Quaterly Sales by RPM FY17-FY19M03
-HDD_data %>% 
+# HDD Quarterly Sales by RPM FY17-FY19M03
+p_Quarterly_RPM <- HDD_data %>% 
   group_by(RPM,Fiscal_Qtr) %>%
-  mutate(RPM_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(RPM_Fiscal_Qtr_QTY=sum(QTY)) %>% 
   ggplot(aes(x=Fiscal_Qtr,y=RPM_Fiscal_Qtr_QTY,group=factor(RPM), colour=factor(RPM))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = 'HDD Quarterly Sales by RPM FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity", colour ='RPM') + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
+  #scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Quarterly_RPM
 ```
 
 By RPM,
@@ -202,33 +211,34 @@ By RPM,
 
 ```{r plot by Form_Factor}
 # HDD Monthly Sales by Form_Factor FY17-FY19M03
-p <- HDD_data %>% 
+p_Monthly_Form_Factor <- HDD_data %>% 
   group_by(Form_Factor,Fiscal_Mo) %>%
-  mutate(Form_Factor_Fiscal_Mo_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Form_Factor_Fiscal_Mo_QTY=sum(QTY)) %>%
   ggplot(aes(x=Fiscal_Mo,y=Form_Factor_Fiscal_Mo_QTY,group=factor(Form_Factor), colour=factor(Form_Factor))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = 'HDD Monthly Sales by Form_Factor FY17-FY19M03', x = "Fiscal Month", y = "Part Quantity", colour='Form Factor') + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
+  #scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
-p
+p_Monthly_Form_Factor
 
-# HDD Quaterly Sales by Form_Factor FY17-FY19M03
-HDD_data %>% 
+# HDD Quarterly Sales by Form_Factor FY17-FY19M03
+p_Quarterly_Form_Factor <- HDD_data %>% 
   group_by(Form_Factor,Fiscal_Qtr) %>%
-  mutate(Form_Factor_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Form_Factor_Fiscal_Qtr_QTY=sum(QTY)) %>% 
   ggplot(aes(x=Fiscal_Qtr,y=Form_Factor_Fiscal_Qtr_QTY,group=factor(Form_Factor), colour=factor(Form_Factor))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = 'HDD Quarterly Sales by Form_Factor FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity", colour = 'Form Factor') + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
+  #scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
+p_Quarterly_Form_Factor
 ```
 
 By Form_Factor,
@@ -241,25 +251,44 @@ HDD_data$Capacity_group <- with(HDD_data, ifelse(Capacity <= 500, "<=500GB",
                               ifelse(Capacity <= 1000, "500GB ~ 1TB", 
                                      ifelse(Capacity <= 2000, "1TB ~ 2TB",
                                             ifelse(Capacity <= 4000, "2TB ~ 4TB",">4TB")))))
-```
+# HDD Monthly Sales by Capacity_group FY17-FY19M03
+p <- HDD_data %>% 
+  group_by(Capacity_group,Fiscal_Mo) %>%
+  mutate(Capacity_group_Fiscal_Mo_QTY=sum(QTY)) %>% 
+  ggplot(aes(x=Fiscal_Mo,y=Capacity_group_Fiscal_Mo_QTY,group=factor(Capacity_group), colour=factor(Capacity_group))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Quarterly Sales by Capacity_group FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+  # facet_wrap(~Capacity_group)
+# ggplotly(p)
+p
 
-```{r Capacity cluster}
-# it seems that it does not work
+# HDD Quarterly Sales by Capacity_group FY17-FY19M03
 HDD_data %>% 
-  group_by(Capacity,Fiscal_Qtr) %>%
-  summarise(Capacity_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit -> temp
-cl <- kmeans(select(temp,Capacity,Capacity_Fiscal_Qtr_QTY),5)
-df <- data.frame(CapacityCluster=cl$cluster,temp)
-df %>% ggplot(aes(CapacityCluster,Capacity,colour=factor(Capacity))) +
-  geom_point()
+  group_by(Capacity_group,Fiscal_Qtr) %>%
+  mutate(Capacity_group_Fiscal_Qtr_QTY=sum(QTY)) %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=Capacity_group_Fiscal_Qtr_QTY,group=factor(Capacity_group), colour=factor(Capacity_group))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Quarterly Sales by Capacity_group FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
 ```
 
 
 ```{r by Capacity}
 # HDD Monthly Sales by Capacity FY17-FY19M03
-p <- HDD_data %>% 
+p_Monthly_Capacity <- HDD_data %>% 
   group_by(Capacity,Fiscal_Mo) %>%
-  mutate(Capacity_Fiscal_Mo_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Capacity_Fiscal_Mo_QTY=sum(QTY)) %>% 
   ggplot(aes(x=Fiscal_Mo,y=Capacity_Fiscal_Mo_QTY,group=factor(Capacity), colour=factor(Capacity))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -271,12 +300,12 @@ p <- HDD_data %>%
   scale_y_continuous(label=comma) + expand_limits(y = 0)
   # facet_wrap(~Capacity)
 # ggplotly(p)
-p
+p_Monthly_Capacity
 
-# HDD Quaterly Sales by Capacity FY17-FY19M03
-HDD_data %>% 
+# HDD Quarterly Sales by Capacity FY17-FY19M03
+p_Quarterly_Capacity <- HDD_data %>% 
   group_by(Capacity,Fiscal_Qtr) %>%
-  mutate(Capacity_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
+  mutate(Capacity_Fiscal_Qtr_QTY=sum(QTY)) %>% 
   ggplot(aes(x=Fiscal_Qtr,y=Capacity_Fiscal_Qtr_QTY,group=factor(Capacity), colour=factor(Capacity))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -285,8 +314,12 @@ HDD_data %>%
   scale_color_tableau("tableau20") + 
   scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ xlim('FY17Q1','FY19Q1')
-  
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  geom_hline(yintercept = 100000, linetype="dashed", color = 'gray') +
+  annotate("rect", xmin = -Inf, xmax = Inf,
+           ymin = c(0,100000), ymax = c(100000,Inf),
+           alpha = 0.1, fill = c("green", "orange"))
+p_Quarterly_Capacity
 
 # Check the distribution of Capacity
 # p <- HDD_data %>% ggplot(aes(x=Capacity,fill=QTY)) +
@@ -296,56 +329,54 @@ HDD_data %>%
 # Check the rank of Capacity QTY Sum
 HDD_data %>% group_by(Capacity) %>% summarise(Capacity_QTYSum=sum(QTY)) %>% arrange(desc(Capacity_QTYSum))
 
-# HDD Monthly Sales by Capacity_group FY17-FY19M03
-p <- HDD_data %>% 
-  group_by(Capacity_group,Fiscal_Mo) %>%
-  mutate(Capacity_group_Fiscal_Mo_QTY=sum(QTY)) %>% na.omit %>%
-  ggplot(aes(x=Fiscal_Mo,y=Capacity_group_Fiscal_Mo_QTY,group=factor(Capacity_group), colour=factor(Capacity_group))) +
-  geom_point(size = 2) +
-  geom_line(size = 1.5) +
-  labs(title = 'HDD Quarterly Sales by Capacity_group FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
-  theme_minimal(base_size = 18) + 
-  scale_color_tableau("tableau20") + 
-  scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
-  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0)
-  # facet_wrap(~Capacity_group)
-# ggplotly(p)
-p
-
-# HDD Quaterly Sales by Capacity_group FY17-FY19M03
-HDD_data %>% 
-  group_by(Capacity_group,Fiscal_Qtr) %>%
-  mutate(Capacity_group_Fiscal_Qtr_QTY=sum(QTY)) %>% na.omit %>%
-  ggplot(aes(x=Fiscal_Qtr,y=Capacity_group_Fiscal_Qtr_QTY,group=factor(Capacity_group), colour=factor(Capacity_group))) +
-  geom_point(size = 2) +
-  geom_line(size = 1.5) +
-  labs(title = 'HDD Quarterly Sales by Capacity_group FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
-  theme_minimal(base_size = 18) + 
-  scale_color_tableau("tableau20") + 
-  scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
-  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0)
 ```
 
 I may need to group "Capacity" in a better way.
 Maybe like Cinkie did for SSD. Done on 5/24/2018.
 
+```{r Group Capacity 2}
+# Group Capacity in 2 groups
+HDD_data$Capacity_group2 <- with(HDD_data, ifelse(Capacity %in% c(1200,600,300,4000,2000,1000,8000,6000), 
+                                                  "High Demand Capacity","Low Demand Capacity"))
+
+# HDD Monthly Sales by Capacity_group FY17-FY19M03
+p_Monthly_Capacity2 <- HDD_data %>% 
+  group_by(Capacity_group2,Fiscal_Mo) %>%
+  mutate(Capacity_group2_Fiscal_Mo_QTY=sum(QTY)) %>% 
+  ggplot(aes(x=Fiscal_Mo,y=Capacity_group2_Fiscal_Mo_QTY,group=factor(Capacity_group2), colour=factor(Capacity_group2))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Capacity 2 Groups FY17-FY19M03', x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY16M01','FY17M01', 'FY18M01', 'FY19M01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+  # facet_wrap(~Capacity_group2)
+# ggplotly(p)
+p_Monthly_Capacity2
+
+# HDD Quarterly Sales by Capacity_group2 FY17-FY19M03
+p_Quarterly_Capacity2 <- HDD_data %>% 
+  group_by(Capacity_group2,Fiscal_Qtr) %>%
+  mutate(Capacity_group2_Fiscal_Qtr_QTY=sum(QTY)) %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=Capacity_group2_Fiscal_Qtr_QTY,group=factor(Capacity_group2), colour=factor(Capacity_group2),label=Capacity_group2)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Quarterly Sales by Capacity 2 Groups FY17-FY19M03', 
+       x = "Fiscal Quarter", y = "Part Quantity",colour='Capacity Group') + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY16Q1','FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ 
+ # geom_text_repel() + geom_label_repel()
+p_Quarterly_Capacity2
+```
+
 Based on the impact of the above factors, how to forecast?
 Quarterly sales forecasting first.
+
 What clusters first?
-
-Sometimes the time series data set that you have may have been collected at regular intervals that were less than one year, for example, monthly or quarterly. In this case, you can specify the number of times that data was collected per year by using the 'frequency' parameter in the ts() function. For monthly time series data, you set frequency=12, while for quarterly time series data, you set frequency=4.
-
-```{r timeseries}
-HDD_data %>% group_by(Fiscal_Mo) %>%
-  summarise(Fiscal_Mo_QTY=sum(QTY)) -> selecteddata
-HDDtimeseries <- ts(selecteddata$Fiscal_Mo_QTY,frequency=12, start=c(2016,1))
-HDDtimeseries
-
-plot.ts(HDDtimeseries)
-
-logHDDtimeseries <- log(HDDtimeseries)
-plot.ts(logHDDtimeseries)
-```
+48 clusters and see how different clusters perform.
 
