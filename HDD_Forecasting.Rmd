@@ -17,6 +17,8 @@ library(TTR)
 library(forecast)
 library(tseries)
 library(timetk)
+
+# Load Facebook Prophet package
 library(Rcpp)
 library(prophet)
 ```
@@ -89,6 +91,7 @@ plot(fcast1,
 Model 3: TBATS
 The last model we're going to train is a TBATS model. This model is designed for use when there are multiple cyclic patterns (e.g. daily, weekly and yearly patterns) in a single time series. Maybe it will be able to detect complicated patterns in our time series.
 Time series with multiple-seasonality can be modelled with this method. Since this is a computationally intensive procedure, the in-built parallel processing facility may be leveraged.
+
 ```{r Monthly TBATS}
 m_tbats = tbats(HDDMonthlytimeseries)
 f_tbats = forecast(m_tbats, h=12)
@@ -124,9 +127,9 @@ for(i in 1:(n-k-1))
   mae2[i,] <- c(abs(fcast2$mean-xnext),rep(NA,12-length(xnext)))
   mae3[i,] <- c(abs(fcast3$mean-xnext),rep(NA,12-length(xnext)))
 }
-plot(1:12,colSums(mae3,na.rm=TRUE),type="l",col=4,xlab="horizon",ylab="MAE")
-lines(1:12,colSums(mae2,na.rm=TRUE),type="l",col=3)
-lines(1:12,colSums(mae1,na.rm=TRUE),type="l",col=2)
+plot(1:3,colSums(mae3,na.rm=TRUE),type="l",col=4,xlab="horizon",ylab="MAE")
+lines(1:3,colSums(mae2,na.rm=TRUE),type="l",col=3)
+lines(1:3,colSums(mae1,na.rm=TRUE),type="l",col=2)
 legend("topright",legend=c("LM","ARIMA","ETS"),col=2:4,lty=1)
 ```
 
@@ -158,9 +161,6 @@ HDDQuarterlytimeseries
 
 plot.ts(HDDQuarterlytimeseries, 
     ylim = c(0, 2500000))
-
-HDD_data %>% group_by(Fiscal_Qtr) %>%
-  mutate(Fiscal_Qtr_QTY=sum(QTY)) -> HDD_quarterly
 ```
 
 
@@ -271,3 +271,104 @@ acfRes <- acf(tsData) # autocorrelation
 pacfRes <- pacf(tsData)  # partial autocorrelation
 ```
 
+
+```{r Facebook Prophet Quarterly Forecasting}
+HDD_data %>% group_by(Fiscal_Qtr) %>%
+  mutate(Fiscal_Qtr_QTY=sum(QTY)) -> HDD_Quarterly
+
+# Convert date format
+df <- na.omit(unique(data.frame(ds = as.Date(HDD_Quarterly$Fiscal_Mo_End_Date,format = "%m/%d/%Y"), y = HDD_Quarterly$Fiscal_Qtr_QTY)))
+
+df <- df[!duplicated(df[,c('y')]),]
+# ds0 = HDD_Monthly$Fiscal_Mo, used to confirm the Month info
+
+# We call the prophet function to fit the model. The first argument is the historical dataframe. Additional arguments control how Prophet fits the data and are described in later pages of this documentation.
+m <- prophet(df)
+
+future <- make_future_dataframe(m, periods = 4, freq = 'quarter')
+tail(future)
+
+forecast <- predict(m, future)
+tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+
+plot(m, forecast, 
+    ylim = c(0, 1000000))
+
+prophet_plot_components(m, forecast)
+
+df.cv <- cross_validation(m, horizon = 356/2, units = 'days')
+
+head(df.cv)
+
+df.cv %>%
+  gather(key="key",value="value",y:yhat) %>%
+  ggplot(aes(x=ds,y=value,fill=key)) + geom_bar(position="dodge", stat="identity")
+
+```
+
+```{r Facebook Prophet Monthly Forecasting}
+HDD_data %>% group_by(Fiscal_Mo) %>%
+  mutate(Fiscal_Mo_QTY=sum(QTY)) -> HDD_Monthly
+
+# Convert date format
+df <- na.omit(unique(data.frame(ds = as.Date(HDD_Monthly$Fiscal_Mo_End_Date,format = "%m/%d/%Y"), y = HDD_Monthly$Fiscal_Mo_QTY)))
+# ds0 = HDD_Monthly$Fiscal_Mo, used to confirm the Month info
+
+# We call the prophet function to fit the model. The first argument is the historical dataframe. Additional arguments control how Prophet fits the data and are described in later pages of this documentation.
+m <- prophet(df)
+
+future <- make_future_dataframe(m, periods = 12, freq = 'month')
+tail(future)
+
+forecast <- predict(m, future)
+tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+
+plot(m, forecast, 
+    ylim = c(0, 1000000))
+
+prophet_plot_components(m, forecast)
+
+df.cv <- cross_validation(m, horizon = 356/2, units = 'days')
+
+head(df.cv)
+
+df.cv %>%
+  gather(key="key",value="value",y:yhat) %>%
+  ggplot(aes(x=ds,y=value,fill=key)) + geom_bar(position="dodge", stat="identity")
+
+```
+
+
+```{r Facebook Prophet Weekly Forecasting}
+HDD_data %>% group_by(Fiscal_Wk) %>%
+  mutate(Fiscal_Wk_QTY=sum(QTY)) -> HDD_Weekly
+
+# Convert date format
+df <- na.omit(unique(data.frame(ds = as.Date(HDD_Weekly$Fiscal_Wk_End_Date,format = "%m/%d/%Y"), y = HDD_Weekly$Fiscal_Wk_QTY)))
+# ds0 = HDD_Monthly$Fiscal_Mo, used to confirm the Month info
+
+# We call the prophet function to fit the model. The first argument is the historical dataframe. Additional arguments control how Prophet fits the data and are described in later pages of this documentation.
+m <- prophet(weekly.seasonality=FALSE)
+m <- add_seasonality(m, name='monthly', period=30.5, fourier.order=5)
+m <- prophet(df)
+
+future <- make_future_dataframe(m, periods = 48, freq = 'week')
+tail(future)
+
+forecast <- predict(m, future)
+tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+
+plot(m, forecast, 
+    ylim = c(0, 1000000))
+
+prophet_plot_components(m, forecast)
+
+df.cv <- cross_validation(m, horizon = 356/2, units = 'days')
+
+head(df.cv)
+
+df.cv %>%
+  gather(key="key",value="value",y:yhat) %>%
+  ggplot(aes(x=ds,y=value,fill=key)) + geom_bar(position="dodge", stat="identity")
+
+```

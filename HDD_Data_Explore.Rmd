@@ -38,7 +38,7 @@ p_week <- HDD_data %>% group_by(Fiscal_Wk) %>%
   theme_minimal(base_size = 18) + 
   scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY16W01','FY17W01', 'FY18W01', 'FY19W01')) +
-  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
   scale_y_continuous(label=comma) + expand_limits(y = 0)
 p_week
 # This weekly plot is too detalied to find patterns.

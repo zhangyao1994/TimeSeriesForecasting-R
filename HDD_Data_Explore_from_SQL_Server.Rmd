@@ -49,3 +49,20 @@ Weekly_HDD_QTY_OnlyDetails %>% na.omit %>%
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0)
 ```
+
+```{r HDD Attach Rate}
+# 5/29/2018
+# Load the extracted data from SQL server
+HDD_data <- read.csv("~/HDD_ATT_RATE.csv")
+
+# Make a histogram plot
+HDD_data %>%
+  ggplot(aes(ATT_RATE)) + 
+  geom_histogram() +
+  labs(title = 'HDD Attach Rate 201701-201915', x = "Attach Rate", y = "Count") + 
+  theme_minimal(base_size = 18) +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+# As we can see, the attach rate of HDD vary a lot, so it is important to forecast the part quantity of HDD.
+```
+
