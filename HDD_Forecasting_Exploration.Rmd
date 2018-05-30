@@ -1,7 +1,7 @@
 ---
 title: "HDD Forecasting Exploration"
 author: "Yao"
-date: "May 24-29, 2018"
+date: "May 24-30, 2018"
 output: html_document
 ---
 
@@ -66,7 +66,7 @@ The ets() function in the forecast package fits exponential state smoothing (ETS
 Let's use it and then make a forecast for the next 3 months.
 ```{r Monthly Exponential State Smoothing}
 m_ets = ets(HDDMonthlytimeseries)
-f_ets = forecast(m_ets, h=12) # forecast 3 months into the future
+f_ets = forecast(m_ets, h=6) # forecast 3 months into the future
 plot(f_ets, 
     ylim = c(0, 1000000))
 ```
@@ -77,13 +77,13 @@ The auto.arima() function provides another modeling method. More info on the ARI
 Let's give it a shot.
 ```{r Monthly ARIMA}
 m_aa = auto.arima(HDDMonthlytimeseries)
-f_aa = forecast(m_aa, h=12)
+f_aa = forecast(m_aa, h=6)
 plot(f_aa, 
     ylim = c(0, 1000000))
 
 # tslm
 fit1 <- tslm(HDDMonthlytimeseries ~ trend + season, lambda=0)
-fcast1 <- forecast(fit1,h=12)
+fcast1 <- forecast(fit1,h=6)
 plot(fcast1, 
     ylim = c(0, 1000000))
 ```
