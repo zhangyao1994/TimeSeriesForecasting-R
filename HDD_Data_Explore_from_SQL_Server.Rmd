@@ -1,7 +1,7 @@
 ---
 title: "HDD Data Exploratory Analytics from SQL Server"
 author: "Yao"
-date: "May 23-25, 2018"
+date: "May 23-31, 2018"
 output: html_document
 ---
 
@@ -31,7 +31,7 @@ It is not well known that you can run SQL code in an R Notebook code chunk. To u
 ```{sql connection=db, output.var="Weekly_HDD_QTY_OnlyDetails"}
 SELECT Order_Date_week, SUM(ITM_QTY) AS HDD_QTY
 FROM IRIS.[Base].[ISG_Business_Transformation.isgOrdersDetails]
-WHERE ITM_TYPE = 'HDD' OR ITM_TYPE LIKE 'HARD%DRIVE%' AND DELL_EMC_ORDER_FLAG = 'DELL' AND (LOB_DESC IN ('PowerEdge','Cloud Products') OR MGMT_PROD_LVL_3_NM = 'Storage')
+WHERE ITM_TYPE LIKE '%HDD%' OR ITM_TYPE LIKE 'HARD%DRIVE%' AND DELL_EMC_ORDER_FLAG = 'DELL' AND (LOB_DESC IN ('PowerEdge','Cloud Products') OR MGMT_PROD_LVL_3_NM = 'Storage')
 GROUP BY Order_Date_week
 ORDER BY Order_Date_week
 ```
@@ -60,9 +60,57 @@ HDD_data %>%
   ggplot(aes(ATT_RATE)) + 
   geom_histogram() +
   labs(title = 'HDD Attach Rate 201701-201915', x = "Attach Rate", y = "Count") + 
-  theme_minimal(base_size = 18) +
+  theme_minimal(base_size = 14) +
   theme(plot.title = element_text(hjust = 0.5)) 
 
 # As we can see, the attach rate of HDD vary a lot, so it is important to forecast the part quantity of HDD.
 ```
+
+```{sql hdd_qty, connection=db, output.var = 'hdd_qty'}
+SELECT 
+  D.Cfg_Desc AS CFG, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week,
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+                     WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+                ELSE A.LOB_DESC END AS LOB_DESC, A.BRAND_CATG_DESC, 
+  A.RGN_DESC,
+  A.GBL_PARNT_ACCT_NM AS Customer, 
+  SUM(SYS_QTY_DELL) AS SYS_QTY,
+  SUM(ITM_QTY) AS PART_QTY
+FROM IRIS.[Base].[ISG_Business_Transformation.isgOrders] AS A 
+JOIN IRIS.[Base].[ISG_Business_Transformation.isgOrdersDetails] B
+ON A.ORD_NBR = B.ORD_NBR AND A.FMLY_PFOLIO_DESC = B.FMLY_PFOLIO_DESC AND A.SRC_BU_ID = B.SRC_BU_ID
+JOIN IRIS.DIM.Date C
+ON B.ORD_DT = C.Fiscal_Date
+JOIN IRIS_Data_Mart.[dbo].[SKU_CFG_Bridge] D
+ON B.ITM_NBR = D.sku_num
+WHERE D.Cfg_Desc LIKE '%HDD%' AND Commodity_Desc IN ('Hard Drive', 'Controller Cards/HBA') AND C.Fiscal_Yr >= 'FY16' AND A.DELL_EMC_ORDER_FLAG = 'DELL' AND (A.LOB_DESC IN ('PowerEdge','Cloud Products') OR A.MGMT_PROD_LVL_3_NM = 'Storage')
+GROUP BY
+  D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week,
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+                   WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+                   ELSE A.LOB_DESC END, A.BRAND_CATG_DESC, 
+  A.RGN_DESC, A.GBL_PARNT_ACCT_NM
+ORDER BY D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
+```
+
+
+
+```{r Deal with missing data}
+Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+
+apply(hdd_qty, 2, function(x) any(is.na(x)))
+
+# Columns have NA: Customer
+hdd_qty = hdd_qty %>% 
+  mutate(Customer = ifelse(
+    grepl('Dummy|disti|\032|APPOINTED|ACCT-R', Customer, ignore.case = T) | Customer == '' | is.na(Customer),
+    'Unknown_Customer', Customer
+  ))
+
+apply(hdd_qty, 2, function(x) any(is.na(x)))
+# All NAs have been cleaned.
+
+save.image("~/HDD_QTY_IRIS.RData")
+```
+
 

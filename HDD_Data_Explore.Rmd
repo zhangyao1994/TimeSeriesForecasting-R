@@ -1,5 +1,5 @@
 ---
-title: "HDD Data Exploratory Analytics"
+title: "Clean HDD Data Exploratory Analytics"
 author: "Yao"
 date: "May 23, 2018 - May 25, 2018"
 output: html_document
