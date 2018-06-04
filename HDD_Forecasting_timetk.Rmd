@@ -11,11 +11,6 @@ library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 
-
-# Load Facebook Prophet package
-library(Rcpp)
-library(prophet)
-
 # Load timetk package # 06/4/2018
 library(tidyquant)
 library(timetk)
@@ -25,6 +20,9 @@ library(broom)
 ## HDD Forecasting
 
 According to the webpage example, let me test this model on daily HDD data.
+However, the daily demand data does not provide good forecast results.
+I uploaded the daily forecasting code to github.
+Let me work on weekly demand here then.
 
 ### Data
 
@@ -32,45 +30,48 @@ According to the webpage example, let me test this model on daily HDD data.
 load("HDD_QTY_IRIS.RData")
 
 # Daiy data
-hdd_qty %>% group_by(Fiscal_Date) %>%
-  summarise(Fiscal_Date_QTY=sum(PART_QTY)) -> HDD_Daily
+hdd_qty %>% group_by(Fiscal_Wk_End_Date) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> HDD_Weekly
 ```
 
 ```{r Visualization}
 # Select date and count
-HDD_Daily$date <- ymd(HDD_Daily$Fiscal_Date)
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 
-HDD_Daily <- HDD_Daily %>% select(date,Fiscal_Date_QTY)
+HDD_Weekly <- HDD_Weekly %>%
+  filter(date>'2016-04-01' & date<'2018-05-25') %>% select(date,HDD_QTY)
 
 # Visualize data and training/testing regions
-HDD_Daily %>%
-    ggplot(aes(x = date, y = Fiscal_Date_QTY)) +
+HDD_Weekly %>%
+    ggplot(aes(x = date, y = HDD_QTY)) +
     geom_point(alpha = 0.5, color = palette_light()[[1]]) +
-    labs(title = "HDD Daily Demand: Daily Scale", x = "Fiscal Date",y='Daily Demand') +
+    geom_line() +
+    labs(title = "HDD Weekly Demand: Weekly Scale", x = "Fiscal Date",y='Weekly Demand') +
     theme_tq() +
-    annotate("text", x = ymd("2017-03-20"), y = 100000,
+    annotate("text", x = ymd("2017-03-20"), y = 220000,
              color = palette_light()[[1]], label = "Train Region") +
-    annotate("text", x = ymd("2018-03-10"), y = 100000,
+    annotate("text", x = ymd("2018-03-10"), y = 230000,
              color = palette_light()[[1]], label = "Test Region") +
     geom_rect(xmin = as.numeric(ymd("2018-01-01")),
               xmax = as.numeric(ymd("2018-05-19")),
-              ymin = 0, ymax = 120000,
-              fill = palette_light()[[4]], alpha = 0.01)
+              ymin = 0, ymax = 280000,
+              fill = palette_light()[[4]], alpha = 0.01) + 
+    expand_limits(y = 0)
 ```
 
 Split the data into train and test sets at "2018-01".
 
 ```{r Split tin training and test sets}
 # Split into training and test sets
-train <- HDD_Daily %>%
+train <- HDD_Weekly %>%
     filter(date < ymd("2018-01-01"))
 
-test <- HDD_Daily %>%
+test <- HDD_Weekly %>%
     filter(date >= ymd("2018-01-01"))
 ```
 
 ### Modeling
-Start with the training set, which has the "date" and "Fiscal_date_QTY" columns.
+Start with the training set, which has the "date" and "HDD_QTY" columns.
 
 ```{r Adding time series signature}
 # Training set
@@ -85,8 +86,9 @@ head(train_augmented)
 Now that we have a number of fields that can be used for training, we can use these for modeling. In practice, you will want to go through the process of pre-processing the data, centering and scaling if necessary, making dummy variables, removing correlated variables that are present, examining interactions, etc. For brevity, we do not do this here.
 
 ```{r Model using the augmented features}
+train_augmented <- train_augmented %>% select(-wday.lbl)
 # Model using the augmented features
-fit_lm <- lm(Fiscal_Date_QTY ~ ., data = train_augmented)
+fit_lm <- lm(HDD_QTY ~ ., data = train_augmented)
 ```
 
 We can examine the model residuals to see if there is any significant pattern remaining using augment() from the broom package.
@@ -97,7 +99,7 @@ fit_lm %>%
     augment() %>%
     ggplot(aes(x = date, y = .resid)) +
     geom_hline(yintercept = 0, color = "red") +
-    geom_point(color = palette_light()[[1]], alpha = 0.5) +
+    geom_point(color = palette_light()[[1]], alpha = 0.5) + 
     theme_tq() +
     labs(title = "Training Set: lm() Model Residuals", x = "") +
     scale_y_continuous(limits = c(-5000, 5000))
@@ -117,7 +119,7 @@ sqrt(mean(fit_lm$residuals^2))
 ### Test Validation
 
 With a suitable model (low residual error and random residuals) we can forecast using the "test" set for validation purposes.
-Anyways, let me validate this daily model.
+Anyways, let me validate this Weekly model.
 
 ```{r Validation}
 head(test)
@@ -131,25 +133,29 @@ yhat_test <- predict(fit_lm, newdata = test_augmented)
 
 pred_test <- test %>%
     add_column(yhat = yhat_test) %>%
-    mutate(.resid = Fiscal_Date_QTY - yhat)
+    mutate(.resid = HDD_QTY - yhat)
 head(pred_test)
 ```
 
 ```{r Results Visualization}
-ggplot(aes(x = date), data = HDD_Daily) +
-    labs(title = "HDD Daily Demand: Daily Scale", x = "Fiscal Date",y='Daily Demand') +
+ggplot(aes(x = date), data = HDD_Weekly) +
+    labs(title = "HDD Weekly Demand: Weekly Scale", x = "Fiscal Date",y='Weekly Demand') +
     theme_tq() +
-    annotate("text", x = ymd("2017-03-20"), y = 100000,
+    annotate("text", x = ymd("2017-03-20"), y = 220000,
              color = palette_light()[[1]], label = "Train Region") +
-    annotate("text", x = ymd("2018-03-10"), y = 100000,
+    annotate("text", x = ymd("2018-03-10"), y = 230000,
              color = palette_light()[[1]], label = "Test Region") +
     geom_rect(xmin = as.numeric(ymd("2018-01-01")),
               xmax = as.numeric(ymd("2018-05-19")),
-              ymin = 0, ymax = 120000,
-              fill = palette_light()[[4]], alpha = 0.01) +
-    geom_point(aes(x = date, y = Fiscal_Date_QTY), data = train, alpha = 0.5, color = palette_light()[[1]]) +
-    geom_point(aes(x = date, y = Fiscal_Date_QTY), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) +
-    geom_point(aes(x = date, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) +
+              ymin = 0, ymax = 280000,
+              fill = palette_light()[[4]], alpha = 0.01) + 
+    expand_limits(y = 0) +
+    geom_point(aes(x = date, y = HDD_QTY), data = train, alpha = 0.5, color = palette_light()[[1]]) + 
+    geom_line(aes(x = date, y = HDD_QTY), data = train, alpha = 0.5, color = palette_light()[[1]]) +
+    geom_point(aes(x = date, y = HDD_QTY), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) + 
+    geom_line(aes(x = date, y = HDD_QTY), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) +
+    geom_point(aes(x = date, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) + 
+    geom_line(aes(x = date, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) +
     theme_tq() 
 ```
 
@@ -159,7 +165,7 @@ The forecast accuracy can be evaluated on the test set using residual diagnostic
 ```{r Calculating forecast error}
 # Calculating forecast error
 error_tbl <- pred_test %>%
-  mutate(pct_err = .resid/Fiscal_Date_QTY * 100) %>%
+  mutate(pct_err = .resid/HDD_QTY * 100) %>%
   summarize(
     me = mean(.resid, na.rm = TRUE),
     rmse = mean(.resid^2, na.rm = TRUE)^0.5,
@@ -185,11 +191,11 @@ ggplot(aes(x = date, y = .resid), data = pred_test) +
 
 ### Forecasting
 
-Let's use our model to predict What are the expected future values for the next six months. The first step is to create the date sequence. Let's use tk_get_timeseries_summary() to review the summary of the dates from the original dataset, "HDD_Daily".
+Let's use our model to predict What are the expected future values for the next six months. The first step is to create the date sequence. Let's use tk_get_timeseries_summary() to review the summary of the dates from the original dataset, "HDD_Weekly".
 
 ```{r Review the summary of the dates from the orginal dataset}
 # Extract HDD index
-idx <- HDD_Daily %>%
+idx <- HDD_Weekly %>%
     tk_index()
 
 # Get time series summary from index
@@ -205,7 +211,7 @@ From the summary, we know that the data is 100% regular because the median and m
 
 ```{r Create idx for the future}
 idx_future <- idx %>%
-    tk_make_future_timeseries(n_future = 180)
+    tk_make_future_timeseries(n_future = 24)
 ```
 
 To make the prediction, we need to use the future index to get the time series signature (tk_get_timeseries_signature()). Make sure to rename the column "index" to "date" so it matches the column names of the original data.
@@ -219,32 +225,33 @@ pred_future <- predict(fit_lm, newdata = data_future)
 
 HDD_future <- data_future %>%
     select(date) %>%
-    add_column(Fiscal_Date_QTY = pred_future)
+    add_column(HDD_QTY = pred_future)
 ```
 
 ```{r Forecast Visualization}
-HDD_Daily %>%
-    ggplot(aes(x = date, y = Fiscal_Date_QTY)) +
-     geom_rect(xmin = as.numeric(ymd("2018-01-01")),
+HDD_Weekly %>%
+    ggplot(aes(x = date, y = HDD_QTY)) +
+    geom_rect(xmin = as.numeric(ymd("2018-01-01")),
               xmax = as.numeric(ymd("2018-05-19")),
-              ymin = 0, ymax = 120000,
+              ymin = 0, ymax = 280000,
               fill = palette_light()[[4]], alpha = 0.01) +
     geom_rect(xmin = as.numeric(ymd("2018-05-20")),
               xmax = as.numeric(ymd("2018-11-20")),
-              ymin = 0, ymax = 120000,
+              ymin = 0, ymax = 280000,
               fill = palette_light()[[3]], alpha = 0.01) +
-    annotate("text", x = ymd("2017-03-20"), y = 90000,
+    annotate("text", x = ymd("2017-03-20"), y = 220000,
              color = palette_light()[[1]], label = "Train Region") +
-    annotate("text", x = ymd("2018-03-10"), y = 100000,
+    annotate("text", x = ymd("2018-03-10"), y = 230000,
              color = palette_light()[[1]], label = "Test Region") +
-    annotate("text", x = ymd("2018-08-20"), y = 110000,
+    expand_limits(y = 0) +
+    annotate("text", x = ymd("2018-08-20"), y = 240000,
              color = palette_light()[[1]], label = "Forecast Region") +
     geom_point(alpha = 0.5, color = palette_light()[[1]]) +
-    geom_point(aes(x = date, y = Fiscal_Date_QTY), data = HDD_future,
+    geom_line(alpha = 0.5, color = palette_light()[[1]]) +
+    geom_point(aes(x = date, y = HDD_QTY), data = HDD_future,
                alpha = 0.5, color = palette_light()[[2]]) +
-    geom_smooth(aes(x = date, y = Fiscal_Date_QTY), data = HDD_future,
-                method = 'loess') + 
-    labs(title = "HDD Daily Demand: 6-Month Forecast", x = "Fiscal Date",y='Daily Demand') +
+    geom_line(aes(x = date, y = HDD_QTY), data = HDD_future) + 
+    labs(title = "HDD Weekly Demand: 6-Month Forecast", x = "Fiscal Date",y='Weekly Demand') +
     theme_tq()
 
 ```
@@ -259,26 +266,25 @@ test_resid_sd <- sd(pred_test$.resid)
 
 HDD_future <- HDD_future %>%
     mutate(
-        lo.95 = Fiscal_Date_QTY - 1.96 * test_resid_sd,
-        lo.80 = Fiscal_Date_QTY - 1.28 * test_resid_sd,
-        hi.80 = Fiscal_Date_QTY + 1.28 * test_resid_sd,
-        hi.95 = Fiscal_Date_QTY + 1.96 * test_resid_sd
+        lo.95 = HDD_QTY - 1.96 * test_resid_sd,
+        lo.80 = HDD_QTY - 1.28 * test_resid_sd,
+        hi.80 = HDD_QTY + 1.28 * test_resid_sd,
+        hi.95 = HDD_QTY + 1.96 * test_resid_sd
         )
 ```
 
 ```{r plotting the forecast with the prediction intervals}
-HDD_Daily %>%
-    ggplot(aes(x = date, y = Fiscal_Date_QTY)) +
-    geom_point(alpha = 0.5, color = palette_light()[[1]]) +
+HDD_Weekly %>%
+    ggplot(aes(x = date, y = HDD_QTY)) +
+    geom_point(alpha = 0.5, color = palette_light()[[1]]) + geom_line() +
     geom_ribbon(aes(ymin = lo.95, ymax = hi.95), data = HDD_future, 
                 fill = "#D5DBFF", color = NA, size = 0) +
     geom_ribbon(aes(ymin = lo.80, ymax = hi.80, fill = key), data = HDD_future,
                 fill = "#596DD5", color = NA, size = 0, alpha = 0.8) +
-    geom_point(aes(x = date, y = Fiscal_Date_QTY), data = HDD_future,
+    geom_point(aes(x = date, y = HDD_QTY), data = HDD_future,
                alpha = 0.5, color = palette_light()[[2]]) +
-    geom_smooth(aes(x = date, y = Fiscal_Date_QTY), data = HDD_future,
-                method = 'loess', color = "white") + 
-    labs(title = "HDD Daily Demand: 6-Month Forecast with Prediction Intervals",x = "Fiscal Date",y='Daily Demand') +
+    geom_line(aes(x = date, y = HDD_QTY), data = HDD_future, color = "white") + 
+    labs(title = "HDD Weekly Demand: 6-Month Forecast with Prediction Intervals",x = "Fiscal Date",y='Weekly Demand') +
     theme_tq()
 ```
 
