@@ -1,7 +1,7 @@
 ---
 title: "HDD Data Exploratory Analytics from SQL Server"
 author: "Yao"
-date: "May 23-31, 2018"
+date: "May 23-31,06/04, 2018"
 output: html_document
 ---
 
@@ -68,7 +68,7 @@ HDD_data %>%
 
 ```{sql hdd_qty, connection=db, output.var = 'hdd_qty'}
 SELECT 
-  D.Cfg_Desc AS CFG, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week,
+  D.Cfg_Desc AS CFG, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week, C.Fiscal_Mo_End_Date,
   CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
                      WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
                 ELSE A.LOB_DESC END AS LOB_DESC, A.BRAND_CATG_DESC, 
@@ -85,7 +85,7 @@ JOIN IRIS_Data_Mart.[dbo].[SKU_CFG_Bridge] D
 ON B.ITM_NBR = D.sku_num
 WHERE D.Cfg_Desc LIKE '%HDD%' AND Commodity_Desc IN ('Hard Drive', 'Controller Cards/HBA') AND C.Fiscal_Yr >= 'FY16' AND A.DELL_EMC_ORDER_FLAG = 'DELL' AND (A.LOB_DESC IN ('PowerEdge','Cloud Products') OR A.MGMT_PROD_LVL_3_NM = 'Storage')
 GROUP BY
-  D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week,
+  D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, C.Fiscal_Date, C.Fiscal_Yr, B.Order_Date_week, C.Fiscal_Mo_End_Date,
   CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
                    WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
                    ELSE A.LOB_DESC END, A.BRAND_CATG_DESC, 
@@ -109,6 +109,9 @@ hdd_qty = hdd_qty %>%
 
 apply(hdd_qty, 2, function(x) any(is.na(x)))
 # All NAs have been cleaned.
+
+rm(db)
+rm(Weekly_HDD_QTY_combined)
 
 save.image("~/HDD_QTY_IRIS.RData")
 ```
