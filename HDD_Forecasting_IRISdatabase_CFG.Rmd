@@ -1,5 +1,5 @@
 ---
-title: "IRIS HDD Forecasting for each CFG"
+title: "IRIS HDD Quarterly Forecasting for each CFG"
 author: "Yao"
 date: "May 31 - June 4, 2018"
 output: html_document
@@ -8,107 +8,121 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(scales)
 library(ggthemes)
 options(scipen = 999)
 
-# !diagnostics off
+# Load timetk package
+library(tidyquant)
+library(timetk)
+library(broom)
 
-blank_theme <- theme_minimal()+
-  theme(
-  axis.title.x = element_blank(),
-  axis.title.y = element_blank(),
-  panel.border = element_blank(),
-  panel.grid=element_blank(),
-  axis.ticks = element_blank(),
-  plot.title=element_text(size=14)
-  )
-
+library(scales) # for percent
 ```
 
-## IRIS HDD Demand Forecasting for each CFG
+## IRIS HDD Quarterly Demand Forecasting for each CFG
 
 ```{r load the data}
 load("HDD_QTY_IRIS.RData")
-HDD_data <- hdd_qty
-rm(hdd_qty)
+
+# Quarterly data
+hdd_qty %>% group_by(CFG,Fiscal_Qtr_End_Date) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> HDD_Quarterly
 ```
 
 ```{r CFG level exploration, echo=TRUE}
-HDD_data %>% 
-  group_by(CFG,Fiscal_Qtr) %>%
-  summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Qtr<'FY19Q2') -> temp_qtr
+HDD_Quarterly$date <- ymd(HDD_Quarterly$Fiscal_Qtr_End_Date)
 
-HDD_data %>% 
-  group_by(CFG,Fiscal_Mo) %>%
-  summarise(CFG_Fiscal_Mo_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Mo<'FY19M04') -> temp_mo
+HDD_Quarterly <- HDD_Quarterly %>% filter(date<'2018-08-03') 
 
-HDD_data %>% 
-  group_by(CFG,Fiscal_Wk) %>%
-  summarise(CFG_Fiscal_Wk_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Wk<'FY19W16') -> temp_wk
-
-CFGgroups <- levels(factor(temp_qtr$CFG))
+CFGgroups <- levels(factor(HDD_Quarterly$CFG))
 len <- length(CFGgroups)
 
 num_CFG_valid <- 0
-for (i in 1:len){
-  #par(mfrow=c(1,3)) 
-  # HDD Weekly Sales
-  temp_data <- filter(temp_wk,CFG==CFGgroups[i])
-  if (sum(filter(temp_data,Fiscal_Wk>='FY18W01')$CFG_Fiscal_Wk_QTY)>1000){
-    num_CFG_valid <- num_CFG_valid+1
-    
-      p_week<- temp_data %>%
-      ggplot(aes(x=Fiscal_Wk,y=CFG_Fiscal_Wk_QTY,group=1)) +
-      geom_point(size = 2) +
-      geom_line(size = 1.5) +
-      labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
-      theme_minimal(base_size = 14) + 
-      scale_color_tableau('tableau10medium') + 
-      scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
-      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-      scale_y_continuous(label=comma) + expand_limits(y = 0)
-    print(p_week)
-    #dev.off()
-    #ggsave(filename = paste(CFGgroups[i],'HDD FY17W10-FY19W15',".png"), p_week, width=10)
-    
-    # HDD Monthly Sales
-    temp_data <- filter(temp_mo,CFG==CFGgroups[i])
-    p_month <- temp_data %>%
-      ggplot(aes(x=Fiscal_Mo,y=CFG_Fiscal_Mo_QTY,group=1)) +
-      geom_point(size = 2) +
-      geom_line(size = 1.5) +
-      labs(title = paste(CFGgroups[i],'HDD Monthly Sales'), x = "Fiscal Month", y = "Part Quantity") + 
-      theme_minimal(base_size = 14) + 
-      scale_color_tableau('tableau10medium') + 
-      scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
-      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-      scale_y_continuous(label=comma) + expand_limits(y = 0) +
-      geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
-    print(p_month)
-    #dev.off()
-    #ggsave(filename = paste(CFGgroups[i],'HDD FY17M04-FY19M03',".png"), p_month, width=10)
-    
-    # HDD Quarterly Sales
-    temp_data <- filter(temp_qtr,CFG==CFGgroups[i])
-    p_quarter <- temp_data %>%
-      ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=1)) +
-      geom_point(size = 2) +
-      geom_line(size = 1.5) +
-      #geom_bar(stat = 'identity') +
-      labs(title = paste(CFGgroups[i],'HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
-      theme_minimal(base_size = 14) + 
-      scale_color_tableau('tableau10medium') + 
-      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
-      scale_y_continuous(label=comma) + expand_limits(y = 0)
-    print(p_quarter)
-    #dev.off()
-    #ggsave(filename = paste(CFGgroups[i],'HDD FY17Q2-FY19Q1',".png"), p_quarter, width=10)
+Attainment <- 0
+
+# Rolling with cross-validation
+forecastPeriodLen = 2
+# The minimum number of observations for a training set
+k <- 6 
+MAPE_CFG <- matrix(NA,len,1)
+for (i_CFG in 1:len){
+  # For each CFG
+  temp_data <- filter(HDD_Quarterly,CFG==CFGgroups[i_CFG]) 
+  # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
+  if (sum(filter(temp_data,Fiscal_Qtr_End_Date>='2017-02-03')$HDD_QTY)>1000){
+    num_CFG_valid <- num_CFG_valid + 1
+    # If there are more than 8 available quarters, try forecasting.
+    if (nrow(temp_data)>8){
+      temp_data <- temp_data %>% ungroup() %>% select(date,HDD_QTY)
+      n <- nrow(temp_data)
+      mape_values <- matrix(NA,n-k-1,1)
+      for(i in 1:(n-k-1)){
+        # Split into training and test sets
+        train <- temp_data %>% filter(date < temp_data$date[k+i])
+        test <- temp_data %>% filter(date >= temp_data$date[k+i])
+ 
+        # Add time series signature
+        train_augmented <- train %>%
+          tk_augment_timeseries_signature()
+        
+        # # To see, whether the variable is a factor or not
+        # l <- sapply(train_augmented, function(x) is.factor(x))
+        # # find the number of levels of factor variables, if this is one you need to drop that
+        # ifelse(n <- sapply(train_augmented[, l], function(x) length(levels(x))) == 1, "DROP", "NODROP")
+        
+        
+        train_augmented <- train_augmented %>% select(-wday.lbl,-month.lbl) # maunually drop unvalid variables
+        # Model using the augmented features
+        fit_lm <- lm(HDD_QTY ~ ., data = train_augmented)
+        # RMSE
+        print(paste(i_CFG,ymd(temp_data$date[k+i]),sqrt(mean(fit_lm$residuals^2))))
+        
+        # We need to again augment the time series signature to the test set.
+        test_augmented <- test %>%
+          tk_augment_timeseries_signature()
+
+        yhat_test <- predict(fit_lm, newdata = test_augmented)
+
+        pred_test <- test %>%
+          add_column(yhat = yhat_test) %>%
+          mutate(.resid = HDD_QTY - yhat)
+        
+        temp <- pred_test %>%
+          mutate(pct_err = .resid/HDD_QTY * 100) %>%
+          summarize(mape = mean(abs(pct_err), na.rm = TRUE))
+        mape_values[i,] <- temp$mape
+      }
+      MAPE_CFG[i_CFG] <- mean(mape_values,na.rm = TRUE)
+      if (MAPE_CFG[i_CFG] <25){
+        Attainment <- Attainment + 1
+      }
+    }
   }
-  
 }
+
+AttainmentRate = Attainment/num_CFG_valid
+print(percent(AttainmentRate))
+print(mean(MAPE_CFG,na.rm = TRUE))
+```
+
+```{r Visualization, echo=TRUE}
+# Visualize data and training/testing regions
+annotatePos <- mean(temp_data$HDD_QTY)
+rectPos <- max(temp_data$HDD_QTY)
+temp_data %>%
+  ggplot(aes(x = date, y = HDD_QTY)) +
+  geom_point(alpha = 0.5, color = palette_light()[[1]]) +
+  geom_line() +
+  labs(title = paste(CFGgroups[i],"HDD Quarterly Demand"), x = "Fiscal Date",y='Quarterly Demand') +
+  theme_tq() +
+  annotate("text", x = ymd("2017-03-20"), y = annotatePos,
+           color = palette_light()[[1]], label = "Train Region") +
+  annotate("text", x = ymd("2018-03-10"), y = annotatePos,
+           color = palette_light()[[1]], label = "Test Region") +
+  geom_rect(xmin = as.numeric(ymd("2018-01-01")),
+            xmax = as.numeric(ymd("2018-05-19")),
+            ymin = 0, ymax = rectPos,
+            fill = palette_light()[[4]], alpha = 0.01) + 
+  expand_limits(y = 0)
 ```
 
