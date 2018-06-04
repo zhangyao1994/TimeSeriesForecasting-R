@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG"
 author: "Yao"
-date: "May 31 - June 1, 2018"
+date: "May 31 - June 4, 2018"
 output: html_document
 ---
 
@@ -38,17 +38,17 @@ rm(hdd_qty)
 HDD_data %>% 
   group_by(CFG,Fiscal_Qtr) %>%
   summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Qtr>'FY17Q1' & Fiscal_Qtr<'FY19Q2') -> temp_qtr
+  filter(Fiscal_Qtr<'FY19Q2') -> temp_qtr
 
 HDD_data %>% 
   group_by(CFG,Fiscal_Mo) %>%
   summarise(CFG_Fiscal_Mo_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Mo>'FY17M03' & Fiscal_Mo<'FY19M04') -> temp_mo
+  filter(Fiscal_Mo<'FY19M04') -> temp_mo
 
 HDD_data %>% 
   group_by(CFG,Fiscal_Wk) %>%
   summarise(CFG_Fiscal_Wk_QTY=sum(PART_QTY)) %>%
-  filter(Fiscal_Wk>'FY17W09' & Fiscal_Wk<'FY19W16') -> temp_wk
+  filter(Fiscal_Wk<'FY19W16') -> temp_wk
 
 CFGgroups <- levels(factor(temp_qtr$CFG))
 len <- length(CFGgroups)
@@ -68,7 +68,7 @@ for (i in 1:len){
       labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
       theme_minimal(base_size = 14) + 
       scale_color_tableau('tableau10medium') + 
-      scale_x_discrete(breaks = c('FY17W10', 'FY18W01', 'FY19W01')) +
+      scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
       scale_y_continuous(label=comma) + expand_limits(y = 0)
     print(p_week)
@@ -84,7 +84,7 @@ for (i in 1:len){
       labs(title = paste(CFGgroups[i],'HDD Monthly Sales'), x = "Fiscal Month", y = "Part Quantity") + 
       theme_minimal(base_size = 14) + 
       scale_color_tableau('tableau10medium') + 
-      scale_x_discrete(breaks = c('FY17M04','FY18M01', 'FY19M01')) +
+      scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
       scale_y_continuous(label=comma) + expand_limits(y = 0) +
       geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
