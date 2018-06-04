@@ -11,7 +11,7 @@ library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 
-# Load timetk package # 06/4/2018
+# Load timetk package # 06/04/2018
 library(tidyquant)
 library(timetk)
 library(broom)
@@ -29,7 +29,7 @@ After testing on weekly and monttly data, let me work on quarterly demand here t
 ```{r load the data}
 load("HDD_QTY_IRIS.RData")
 
-# Daiy data
+# Quarterly data
 hdd_qty %>% group_by(Fiscal_Qtr_End_Date) %>%
   summarise(HDD_QTY=sum(PART_QTY)) -> HDD_Quarterly
 ```
@@ -105,7 +105,6 @@ fit_lm %>%
     #scale_y_continuous(limits = c(-5000, 5000))
 ```
 
-*Two months have large errors and they are around 2016-06 and 2017-06.*
 
 We can also get a quick idea of the overall error of the model on the training set. Note that what we really care about is the error on the test set, as this is a much better predictor of future model performance.
 
@@ -114,7 +113,6 @@ We can also get a quick idea of the overall error of the model on the training s
 sqrt(mean(fit_lm$residuals^2))
 ```
 
-*Wow, it seems that the RMSE is too large.*
 
 ### Test Validation
 
