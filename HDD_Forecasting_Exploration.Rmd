@@ -1,7 +1,7 @@
 ---
 title: "HDD Forecasting Exploration"
 author: "Yao"
-date: "May 24-30, 2018"
+date: "May 24-30, 6/4, 2018"
 output: html_document
 ---
 
@@ -16,11 +16,15 @@ options(scipen = 999)
 library(TTR)
 library(forecast)
 library(tseries)
-library(timetk)
 
 # Load Facebook Prophet package
 library(Rcpp)
 library(prophet)
+
+# Load timetk package # 06/4/2018
+library(tidyquant)
+library(timetk)
+library(broom)
 ```
 
 ## HDD Forecasting
