@@ -17,6 +17,64 @@ library(timetk)
 library(broom)
 
 library(scales) # for percent
+
+
+# # make the code parallel using 'parallel' package
+# library(parallel)
+#  
+# # Calculate the number of cores
+# no_cores <- detectCores() - 1
+#  
+# # Initiate cluster
+# cl <- makeCluster(no_cores)
+
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+cl<-makeCluster(no_cores)
+registerDoParallel(cl)
+```
+
+```{r Test Parallel package}
+# # 'parallel' package
+# system.time(parLapply(cl, 2:4,
+#           function(exponent)
+#             2^exponent))
+# system.time(lapply(2:4,
+#           function(exponent)
+#             2^exponent))
+```
+
+```{r Test 'forecast' package}
+system.time(foreach(i=1:10000) %do% sum(tanh(1:i)))
+
+registerDoSEQ()
+getDoParWorkers()
+
+registerDoParallel()
+getDoParWorkers()
+system.time(foreach(i=1:10000) %dopar% sum(tanh(1:i)))
+
+
+registerDoParallel(cl)
+system.time(foreach(i=1:10000) %dopar% sum(tanh(1:i)))
+stopCluster(cl)
+
+results <- foreach(i=1:n, .export=c('function1', 'function2'), .packages='package1') %dopar% {
+  # do something cool
+}
+
+results = foreach(i=1:10) %dopar% {
+  data.frame(feature=rnorm(10))
+}
+class(results)
+
+results = foreach(i=1:10, .combine=data.frame) %dopar% {
+  data.frame(feature=rnorm(10))
+}
+class(results)
 ```
 
 ## IRIS HDD Weekly Demand Forecasting for each CFG
@@ -29,7 +87,76 @@ hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
 ```
 
-```{r CFG level exploration, echo=TRUE}
+```{r Cross Validation Function}
+mycrossvalidation <- function(i,temp_data,k,forecastPeriodLen){
+  # Split into training and test sets
+  train <- temp_data %>% filter(date < temp_data$date[k+i])
+  test <- temp_data %>% filter(date >= temp_data$date[k+i] & date <= temp_data$date[k+i+forecastPeriodLen-1])
+  
+  # Add time series signature
+  train_augmented <- train %>%
+    tk_augment_timeseries_signature()
+  
+  train_augmented <- train_augmented %>% select(-wday.lbl,-month.lbl) # maunually drop unvalid variables
+  # Model using the augmented features
+  fit_lm <- lm(HDD_QTY ~ ., data = train_augmented)
+  
+  # We need to again augment the time series signature to the test set.
+  test_augmented <- test %>%
+    tk_augment_timeseries_signature()
+  
+  yhat_test <- predict(fit_lm, newdata = test_augmented)
+  
+  pred_test <- test %>%
+    add_column(yhat = yhat_test) %>%
+    mutate(.resid = HDD_QTY - yhat)
+  
+  # Weekly Error Calculation
+  temp <- pred_test %>%
+    mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err))
+  mape_post4weekly_values <- mean(temp$ape[3:6])
+  # Monthly Error Calculation
+  mape_monthly_after2weeks <- abs(sum(temp$yhat[3:6])-sum(temp$HDD_QTY[3:6]))/sum(temp$HDD_QTY[3:6]) * 100
+  return(c(mape_post4weekly_values,mape_monthly_after2weeks))
+}
+```
+
+
+```{r Forecast Function}
+myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
+  temp_date <- cbind(date,HDD_QTY)
+  n <- nrow(temp_data)
+  mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  seq(1,(n-k-forecastPeriodLen+1),4)
+
+  mycrossvalidation(i,temp_data,k,forecastPeriodLen)
+   
+  
+  # Weekly Attainment Calculation
+  MAPE_CFG_weekly<- mean(mape_post4weekly_values,na.rm = TRUE)
+  # Monthly Attainment Calculation 
+  MAPE_CFG_Monthly<- mean(mape_monthly_after2weeks,na.rm = TRUE)
+  # TO avoid the big impact of the abnormal data
+  MAPE_CFG_Monthly_median<- median(mape_monthly_after2weeks,na.rm = TRUE)
+  return(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+}
+```
+
+
+```{r Run the fuctions}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+
+
+clusterExport(cl, "")
+clusterEvalQ(cl, library())
+
+myforecast(HDD_QTY, date, k, forecastPeriodLen)
+
+```
+
+
+```{r Loop CFG, echo=TRUE}
 HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 
 # HDD_Weekly <- HDD_Weekly %>% filter(date<'2018-08-03') 
@@ -190,5 +317,14 @@ print(mean(MAPE_CFG_weekly,na.rm = TRUE))
 Attainment_MonthRate = Attainment_Month/num_CFG_valid
 print(percent(Attainment_MonthRate))
 print(mean(MAPE_CFG_Monthly,na.rm = TRUE))
+
+Attainment_MonthRate2 = Attainment_Month2/num_CFG_valid
+print(percent(Attainment_MonthRate2))
+print(mean(MAPE_CFG_Monthly_median,na.rm = TRUE))
+```
+
+```{r close the clusters}
+# stopCluster(cl) # for Parallel package
+stopImplicitCluster()
 ```
 
