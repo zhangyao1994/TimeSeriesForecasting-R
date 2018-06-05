@@ -1,0 +1,194 @@
+---
+title: "IRIS HDD Forecasting for each CFG using Weekly Data"
+author: "Yao"
+date: "June 5, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+
+# Load timetk package
+library(tidyquant)
+library(timetk)
+library(broom)
+
+library(scales) # for percent
+```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+load("HDD_QTY_IRIS.RData")
+
+# Weekly data
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r CFG level exploration, echo=TRUE}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+
+# HDD_Weekly <- HDD_Weekly %>% filter(date<'2018-08-03') 
+# I used to remove the latest week since it might be not complete, but it seems that it is not a problem so I do not remove data now.
+
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+# len <- 2 # fOr quick test
+num_CFG_valid <- 0
+Attainment_week <- 0
+Attainment_Month <- 0
+Attainment_Month2 <- 0
+Attainment_Quarter <- 0
+
+# Rolling with cross-validation
+V <- 0 # Visualize the figures or not
+forecastPeriodLen = 6
+# The minimum number of observations for a training set
+k <- 18 
+MAPE_CFG_weekly <- matrix(NA,len,1)
+MAPE_CFG_Monthly <- matrix(NA,len,1)
+MAPE_CFG_Monthly_median <- matrix(NA,len,1)
+MAPE_CFG_Quarterly <- matrix(NA,len,1)
+
+for (i_CFG in 1:len){
+  # For each CFG
+  temp_data <- filter(HDD_Weekly,CFG==CFGgroups[i_CFG]) 
+  # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
+  if (sum(filter(temp_data,Fiscal_Wk_End_Date>='2017-02-03')$HDD_QTY)>1000){
+    num_CFG_valid <- num_CFG_valid + 1
+    # If there are more than 24 available Weeks, try forecasting.
+    if (nrow(temp_data)>(k+forecastPeriodLen)){
+      temp_data <- temp_data %>% ungroup() %>% select(date,HDD_QTY)
+      n <- nrow(temp_data)
+      mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+      mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+      for(i in seq(1,(n-k-forecastPeriodLen+1),4)){
+        # Split into training and test sets
+        train <- temp_data %>% filter(date < temp_data$date[k+i])
+        test <- temp_data %>% filter(date >= temp_data$date[k+i] & date <= temp_data$date[k+i+forecastPeriodLen-1])
+        
+        # Visualize data and training/testing regions
+        if (0==1){
+          annotatePos <- max(temp_data$HDD_QTY)*0.85
+          rectPos <- max(temp_data$HDD_QTY)
+          p <- temp_data %>%
+            ggplot(aes(x = date, y = HDD_QTY)) +
+            geom_point(alpha = 0.5, color = palette_light()[[1]]) +
+            geom_line() +
+            labs(title = paste(CFGgroups[i_CFG],"HDD Weekly Demand"), x = "Fiscal Week End Date",y='Weekly Demand') +
+            theme_tq() +
+            annotate("text", x = ymd(temp_data$date[k+i-k/2]), y = annotatePos,
+                     color = palette_light()[[1]], label = "Train Region") +
+            annotate("text", x = ymd(temp_data$date[k+i+forecastPeriodLen/2]), y = annotatePos*0.85,
+                     color = palette_light()[[1]], label = "Test Region") +
+            geom_rect(xmin = as.numeric(ymd(temp_data$date[k+i])),
+                      xmax = as.numeric(ymd(temp_data$date[k+i+forecastPeriodLen])),
+                      ymin = 0, ymax = rectPos,
+                      fill = palette_light()[[4]], alpha = 0.01) + 
+            geom_rect(xmin = as.numeric(ymd(temp_data$date[k+i-k])),
+                      xmax = as.numeric(ymd(temp_data$date[k+i])),
+                      ymin = 0, ymax = rectPos,
+                      fill = palette_light()[[3]], alpha = 0.01) + 
+            expand_limits(y = 0)
+          print(p)
+        }
+        
+        
+        # Add time series signature
+        train_augmented <- train %>%
+          tk_augment_timeseries_signature()
+        
+        # # To see, whether the variable is a factor or not
+        # l <- sapply(train_augmented, function(x) is.factor(x))
+        # # find the number of levels of factor variables, if this is one you need to drop that
+        # ifelse(n <- sapply(train_augmented[, l], function(x) length(levels(x))) == 1, "DROP", "NODROP")
+        
+        
+        train_augmented <- train_augmented %>% select(-wday.lbl,-month.lbl) # maunually drop unvalid variables
+        # Model using the augmented features
+        fit_lm <- lm(HDD_QTY ~ ., data = train_augmented)
+        
+        # We need to again augment the time series signature to the test set.
+        test_augmented <- test %>%
+          tk_augment_timeseries_signature()
+        
+        yhat_test <- predict(fit_lm, newdata = test_augmented)
+        
+        pred_test <- test %>%
+          add_column(yhat = yhat_test) %>%
+          mutate(.resid = HDD_QTY - yhat)
+        
+        if (V==1){
+          annotatePos <- max(temp_data$HDD_QTY)*0.85
+          rectPos <- max(temp_data$HDD_QTY)
+          p <- ggplot(aes(x = date), data = temp_data) +
+            labs(title = paste(CFGgroups[i_CFG],"HDD Weekly Demand"), x = "Fiscal Week End Date",y='Weekly Demand') +
+            theme_tq() +
+            annotate("text", x = ymd(temp_data$date[k+i-k/2]), y = annotatePos,
+                     color = palette_light()[[1]], label = "Train Region") +
+            annotate("text", x = ymd(temp_data$date[k+i+forecastPeriodLen/2]), y = annotatePos*0.85,
+                     color = palette_light()[[1]], label = "Test Region") +
+            geom_rect(xmin = as.numeric(ymd(temp_data$date[k+i])),
+                      xmax = as.numeric(ymd(temp_data$date[k+i+forecastPeriodLen])),
+                      ymin = 0, ymax = rectPos,
+                      fill = palette_light()[[4]], alpha = 0.01) + 
+            geom_rect(xmin = as.numeric(ymd(temp_data$date[k+i-k])),
+                      xmax = as.numeric(ymd(temp_data$date[k+i])),
+                      ymin = 0, ymax = rectPos,
+                      fill = palette_light()[[3]], alpha = 0.01) + 
+            expand_limits(y = 0) +
+            geom_point(aes(x = date, y = HDD_QTY), data = train, alpha = 0.5, color = palette_light()[[1]]) + 
+            geom_line(aes(x = date, y = HDD_QTY), data = train, alpha = 0.5, color = palette_light()[[1]]) +
+            geom_point(aes(x = date, y = HDD_QTY), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) + 
+            geom_line(aes(x = date, y = HDD_QTY), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) +
+            geom_point(aes(x = date, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) + 
+            geom_line(aes(x = date, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) +
+            theme_tq() 
+          print(p)
+          ggsave(filename = paste(CFGgroups[i_CFG],temp_data$date[k+i],".png"), p, width=10)
+        }
+       
+        # Weekly Error Calculation
+        temp <- pred_test %>%
+          mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err))
+        mape_post4weekly_values[i,] <- mean(temp$ape[3:6])
+        # Monthly Error Calculation
+        mape_monthly_after2weeks[i,] <- abs(sum(temp$yhat[3:6])-sum(temp$HDD_QTY[3:6]))/sum(temp$HDD_QTY[3:6]) * 100
+        # Quarterly Error Calculation # OMG, 6 weeks cannot get a quarter result.
+        
+        
+        # Print Errors
+        print(paste(i_CFG,ymd(temp_data$date[k+i]),mape_post4weekly_values[i,],mape_monthly_after2weeks[i,]))
+      }
+      # Weekly Attainment Calculation
+      MAPE_CFG_weekly[i_CFG] <- mean(mape_post4weekly_values,na.rm = TRUE)
+      if (MAPE_CFG_weekly[i_CFG] <25){
+        Attainment_week <- Attainment_week + 1
+      }
+      # Monthly Attainment Calculation 
+      MAPE_CFG_Monthly[i_CFG] <- mean(mape_monthly_after2weeks,na.rm = TRUE)
+      if (MAPE_CFG_Monthly[i_CFG] <25){
+        Attainment_Month <- Attainment_Month + 1
+      }
+      # TO avoid the big impact of the abnormal data
+      MAPE_CFG_Monthly_median[i_CFG] <- median(mape_monthly_after2weeks,na.rm = TRUE)
+      if (MAPE_CFG_Monthly_median[i_CFG] <25){
+        Attainment_Month2 <- Attainment_Month2 + 1
+      }
+    }
+  }
+}
+
+Attainment_weekRate = Attainment_week/num_CFG_valid
+print(percent(Attainment_weekRate))
+print(mean(MAPE_CFG_weekly,na.rm = TRUE))
+
+Attainment_MonthRate = Attainment_Month/num_CFG_valid
+print(percent(Attainment_MonthRate))
+print(mean(MAPE_CFG_Monthly,na.rm = TRUE))
+```
+
