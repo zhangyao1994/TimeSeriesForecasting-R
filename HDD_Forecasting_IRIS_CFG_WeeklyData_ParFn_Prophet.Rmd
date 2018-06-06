@@ -1,0 +1,174 @@
+---
+title: "IRIS HDD Forecasting for each CFG using Weekly Data"
+author: "Yao"
+date: "June 6, 2018"
+output: html_document
+---
+
+This is the parallel function version using Facebook 'Prophet'.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+
+# Load Facebook Prophet package
+library(Rcpp)
+library(prophet)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+load("HDD_QTY_IRIS.RData")
+
+# Weekly data
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r Cross Validation Function}
+mycrossvalidation <- function(i,df,k,forecastPeriodLen){
+  # Split into training and test sets
+  train <- df %>% filter(ds < df$ds[k+i])
+  test <- df %>% filter(ds >= df$ds[k+i] & ds <= df$ds[k+i+forecastPeriodLen-1])
+  
+  m <- prophet(train)
+  
+  future <- make_future_dataframe(m, periods = 6, freq = 'week',include_history = FALSE)
+  fcast <- predict(m, future)
+
+  pred_test <- test %>%
+    add_column(yhat = fcast$yhat) %>%
+    mutate(.resid = fcast$yhat - y)
+
+  # Weekly Error Calculation
+  temp <- pred_test %>%
+    mutate(pct_err = .resid/y * 100, ape = abs(pct_err))
+  mape_post4weekly_values <- mean(temp$ape[3:6])
+  # Monthly Error Calculation
+  mape_monthly_after2weeks <- abs(sum(temp$yhat[3:6])-sum(temp$y[3:6]))/sum(temp$y[3:6]) * 100
+  return(c(mape_post4weekly_values,mape_monthly_after2weeks))
+}
+```
+
+
+```{r Forecast Function}
+myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
+  temp_data <- na.omit(unique(data.frame(ds = date, y = HDD_QTY)))
+  n <- length(date)
+  
+  mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  
+  CV.Errors <- data.frame()
+  for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
+    CV.Errors <- rbind(CV.Errors,mycrossvalidation(i,temp_data,k,forecastPeriodLen))
+  }
+
+  # Weekly Attainment Calculation
+  MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
+  # Monthly Attainment Calculation 
+  MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
+  # TO avoid the big impact of the abnormal data
+  MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+  
+  return(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+}
+```
+
+
+```{r Run the fuctions parallel}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+#len <- 2 # fOr quick test
+
+forecastPeriodLen = 6
+# The minimum number of observations for a training set
+k <- 18 
+
+#  .export=c('HDD_Weekly')
+Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp')) %dopar% {
+  # For each CFG
+  temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+  # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
+  if (sum(filter(temp_data,Fiscal_Wk_End_Date>='2017-02-03')$HDD_QTY)>1000){
+     # If there are more than 24 available Weeks, try forecasting.
+     if (nrow(temp_data)>(k+forecastPeriodLen)){
+       # Forecast
+       myforecast(temp_data$HDD_QTY, temp_data$date, k, forecastPeriodLen)
+     }
+   }
+}
+
+dimnames(Results)[[2]] <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+Results <- data.frame(Results)
+indx <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+Results[indx] <- lapply(Results[indx], function(x) as.numeric(as.character(x)))
+
+num_CFG_valid <- nrow(Results) # The total number of CFGs were forecasted.
+
+Attainment_week <- nrow(Results %>% filter(MAPE_weekly<=25))
+Attainment_Month <- nrow(Results %>% filter(MAPE_Monthly<=25))
+Attainment_Month2 <- nrow(Results %>% filter(MAPE_Monthly_median<=25))
+
+Attainment_weekRate = Attainment_week/num_CFG_valid
+print(percent(Attainment_weekRate))
+
+Attainment_MonthRate = Attainment_Month/num_CFG_valid
+print(percent(Attainment_MonthRate))
+
+Attainment_MonthRate2 = Attainment_Month2/num_CFG_valid
+print(percent(Attainment_MonthRate2))
+
+MAPE <- lapply(Results,mean)
+MAPE_median <- lapply(Results,median)
+```
+
+```{r close the clusters}
+# for Parallel package
+stopImplicitCluster()
+```
+
+```{r Debug, eval=FALSE, include=FALSE}
+i_CFG <- 1
+temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+HDD_QTY <- temp_data$HDD_QTY
+date <- temp_data$date
+
+temp_data <- na.omit(unique(data.frame(ds = date, y = HDD_QTY)))
+n <- length(date)
+
+mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+
+CV.Errors <- data.frame()
+for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
+  CV.Errors <- rbind(CV.Errors,mycrossvalidation(i,temp_data,k,forecastPeriodLen))
+}
+
+# Weekly Attainment Calculation
+MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
+# Monthly Attainment Calculation 
+MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
+# TO avoid the big impact of the abnormal data
+MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+
+print(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+```
+
