@@ -28,6 +28,8 @@ library(scales) # for percent
 # # Initiate cluster
 # cl <- makeCluster(no_cores)
 
+library(iterators)
+library(parallel)
 library(foreach)
 library(doParallel)
  
@@ -45,36 +47,35 @@ registerDoParallel(cl)
 # system.time(lapply(2:4,
 #           function(exponent)
 #             2^exponent))
+# clusterExport(cl, "")
+# clusterEvalQ(cl, library())
 ```
 
 ```{r Test 'forecast' package}
-system.time(foreach(i=1:10000) %do% sum(tanh(1:i)))
+# registerDoSEQ()
+# getDoParWorkers()
+# system.time(foreach(i=1:10000) %do% sum(tanh(1:i)))
+# 
+# registerDoParallel(cl)
+# getDoParWorkers()
+# system.time(foreach(i=1:10000, .export=c('sum', 'tanh')) %dopar% sum(tanh(1:i)))
+# 
+# 
+# registerDoParallel(cl)
+# system.time(foreach(i=1:10000) %dopar% sum(tanh(1:i)))
+# stopCluster(cl)
+# The above tests are done. User's time is saved a little bit.
 
-registerDoSEQ()
-getDoParWorkers()
-
-registerDoParallel()
-getDoParWorkers()
-system.time(foreach(i=1:10000) %dopar% sum(tanh(1:i)))
-
-
-registerDoParallel(cl)
-system.time(foreach(i=1:10000) %dopar% sum(tanh(1:i)))
-stopCluster(cl)
-
-results <- foreach(i=1:n, .export=c('function1', 'function2'), .packages='package1') %dopar% {
-  # do something cool
-}
-
-results = foreach(i=1:10) %dopar% {
-  data.frame(feature=rnorm(10))
-}
-class(results)
-
-results = foreach(i=1:10, .combine=data.frame) %dopar% {
-  data.frame(feature=rnorm(10))
-}
-class(results)
+# results = foreach(i=1:10) %dopar% {
+#   data.frame(feature=rnorm(10))
+# }
+# class(results)
+# # , .packages='package1'
+# results = foreach(i=1:10, .combine=data.frame) %dopar% {
+#   data.frame(feature=rnorm(10))
+# }
+# class(results)
+# The above tests are done.
 ```
 
 ## IRIS HDD Weekly Demand Forecasting for each CFG
@@ -99,6 +100,9 @@ mycrossvalidation <- function(i,temp_data,k,forecastPeriodLen){
   
   train_augmented <- train_augmented %>% select(-wday.lbl,-month.lbl) # maunually drop unvalid variables
   # Model using the augmented features
+  
+  # Debug does not work
+  print(train_augmented)
   fit_lm <- lm(HDD_QTY ~ ., data = train_augmented)
   
   # We need to again augment the time series signature to the test set.
@@ -128,31 +132,47 @@ myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
   n <- nrow(temp_data)
   mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
   mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
-  seq(1,(n-k-forecastPeriodLen+1),4)
-
-  mycrossvalidation(i,temp_data,k,forecastPeriodLen)
-   
   
+  CV.Errors <- data.frame()
+  for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
+    CV.Errors <- rbind(CV.Errors,mycrossvalidation(i,temp_data,k,forecastPeriodLen))
+  }
+
   # Weekly Attainment Calculation
-  MAPE_CFG_weekly<- mean(mape_post4weekly_values,na.rm = TRUE)
+  MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
   # Monthly Attainment Calculation 
-  MAPE_CFG_Monthly<- mean(mape_monthly_after2weeks,na.rm = TRUE)
+  MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
   # TO avoid the big impact of the abnormal data
-  MAPE_CFG_Monthly_median<- median(mape_monthly_after2weeks,na.rm = TRUE)
+  MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+  
   return(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
 }
 ```
 
 
-```{r Run the fuctions}
+```{r Run the fuctions parallel}
 HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+len <- 2 # fOr quick test
 
+forecastPeriodLen = 6
+# The minimum number of observations for a training set
+k <- 18 
 
-clusterExport(cl, "")
-clusterEvalQ(cl, library())
-
-myforecast(HDD_QTY, date, k, forecastPeriodLen)
-
+#  .export=c('HDD_Weekly')
+Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','timetk','tidyquant','broom')) %dopar% {
+  # For each CFG
+  temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+  # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
+  if (sum(filter(temp_data,Fiscal_Wk_End_Date>='2017-02-03')$HDD_QTY)>1000){
+     # If there are more than 24 available Weeks, try forecasting.
+     if (nrow(temp_data)>(k+forecastPeriodLen)){
+       # Forecast
+       myforecast(temp_data$HDD_QTY, HDD_Weekly$date, k, forecastPeriodLen)
+     }
+   }
+}
 ```
 
 
@@ -164,7 +184,7 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
-# len <- 2 # fOr quick test
+len <- 2 # fOr quick test
 num_CFG_valid <- 0
 Attainment_week <- 0
 Attainment_Month <- 0
@@ -181,7 +201,7 @@ MAPE_CFG_Monthly <- matrix(NA,len,1)
 MAPE_CFG_Monthly_median <- matrix(NA,len,1)
 MAPE_CFG_Quarterly <- matrix(NA,len,1)
 
-for (i_CFG in 1:len){
+Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','timetk','tidyquant','broom')) %dopar% {
   # For each CFG
   temp_data <- filter(HDD_Weekly,CFG==CFGgroups[i_CFG]) 
   # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
@@ -278,7 +298,7 @@ for (i_CFG in 1:len){
           print(p)
           ggsave(filename = paste(CFGgroups[i_CFG],temp_data$date[k+i],".png"), p, width=10)
         }
-       
+        
         # Weekly Error Calculation
         temp <- pred_test %>%
           mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err))
@@ -287,40 +307,42 @@ for (i_CFG in 1:len){
         mape_monthly_after2weeks[i,] <- abs(sum(temp$yhat[3:6])-sum(temp$HDD_QTY[3:6]))/sum(temp$HDD_QTY[3:6]) * 100
         # Quarterly Error Calculation # OMG, 6 weeks cannot get a quarter result.
         
-        
-        # Print Errors
-        print(paste(i_CFG,ymd(temp_data$date[k+i]),mape_post4weekly_values[i,],mape_monthly_after2weeks[i,]))
+        # Print Errors # Foreach can not print...
+        # print(paste(i_CFG,ymd(temp_data$date[k+i]),mape_post4weekly_values[i,],mape_monthly_after2weeks[i,]))
       }
       # Weekly Attainment Calculation
       MAPE_CFG_weekly[i_CFG] <- mean(mape_post4weekly_values,na.rm = TRUE)
-      if (MAPE_CFG_weekly[i_CFG] <25){
-        Attainment_week <- Attainment_week + 1
-      }
+      # if (MAPE_CFG_weekly[i_CFG] <25){
+      #   Attainment_week <- Attainment_week + 1
+      # }
       # Monthly Attainment Calculation 
       MAPE_CFG_Monthly[i_CFG] <- mean(mape_monthly_after2weeks,na.rm = TRUE)
-      if (MAPE_CFG_Monthly[i_CFG] <25){
-        Attainment_Month <- Attainment_Month + 1
-      }
+      # if (MAPE_CFG_Monthly[i_CFG] <25){
+      #   Attainment_Month <- Attainment_Month + 1
+      # }
       # TO avoid the big impact of the abnormal data
       MAPE_CFG_Monthly_median[i_CFG] <- median(mape_monthly_after2weeks,na.rm = TRUE)
-      if (MAPE_CFG_Monthly_median[i_CFG] <25){
-        Attainment_Month2 <- Attainment_Month2 + 1
-      }
+      # if (MAPE_CFG_Monthly_median[i_CFG] <25){
+      #   Attainment_Month2 <- Attainment_Month2 + 1
+      # }
+      return(c(CFGgroups[i_CFG],MAPE_CFG_weekly[i_CFG],MAPE_CFG_Monthly[i_CFG],MAPE_CFG_Monthly_median[i_CFG]))
     }
   }
 }
 
-Attainment_weekRate = Attainment_week/num_CFG_valid
-print(percent(Attainment_weekRate))
-print(mean(MAPE_CFG_weekly,na.rm = TRUE))
+dimnames(Results)[[2]] <- c('CFG','MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
 
-Attainment_MonthRate = Attainment_Month/num_CFG_valid
-print(percent(Attainment_MonthRate))
-print(mean(MAPE_CFG_Monthly,na.rm = TRUE))
-
-Attainment_MonthRate2 = Attainment_Month2/num_CFG_valid
-print(percent(Attainment_MonthRate2))
-print(mean(MAPE_CFG_Monthly_median,na.rm = TRUE))
+# Attainment_weekRate = Attainment_week/num_CFG_valid
+# print(percent(Attainment_weekRate))
+# print(mean(MAPE_CFG_weekly,na.rm = TRUE))
+# 
+# Attainment_MonthRate = Attainment_Month/num_CFG_valid
+# print(percent(Attainment_MonthRate))
+# print(mean(MAPE_CFG_Monthly,na.rm = TRUE))
+# 
+# Attainment_MonthRate2 = Attainment_Month2/num_CFG_valid
+# print(percent(Attainment_MonthRate2))
+# print(mean(MAPE_CFG_Monthly_median,na.rm = TRUE))
 ```
 
 ```{r close the clusters}
