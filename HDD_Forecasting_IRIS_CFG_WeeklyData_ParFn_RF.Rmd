@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG using Weekly Data"
 author: "Yao"
-date: "June 5-6, 2018"
+date: "June 5-7, 2018"
 output: html_document
 ---
 
@@ -56,7 +56,7 @@ mycrossvalidation <- function(i,temp_data,k,forecastPeriodLen){
   
   # maunually drop unvalid variables
   temp <-
-    train_augmented %>% select(-wday.lbl,-month.lbl,-Fiscal_Wk_End_Date)
+    train_augmented %>% select(-wday.lbl,-month.lbl)
   
   # Remove the column with only one value
   temp <- Filter(function(x)(length(unique(x))>1), temp)
@@ -76,21 +76,19 @@ mycrossvalidation <- function(i,temp_data,k,forecastPeriodLen){
 
   # Weekly Error Calculation
   temp <- pred_test %>%
-    mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err))
-  mape_post4weekly_values <- mean(temp$ape[3:6])
-  # Monthly Error Calculation
-  mape_monthly_after2weeks <- abs(sum(temp$yhat[3:6])-sum(temp$HDD_QTY[3:6]))/sum(temp$HDD_QTY[3:6]) * 100
-  return(c(mape_post4weekly_values,mape_monthly_after2weeks))
+    mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err)) %>% na.omit()
+  mape_fcastPeriodweekly_values <- mean(temp$ape[forecastPeriodLen/2:forecastPeriodLen],na.rm = TRUE)
+  # Quarterly Error Calculation
+  mape_Quarterly_fcastPeriod <- abs(sum(temp$yhat[forecastPeriodLen/2:forecastPeriodLen])-sum(temp$HDD_QTY[forecastPeriodLen/2:forecastPeriodLen]))/sum(temp$HDD_QTY[forecastPeriodLen/2:forecastPeriodLen]) * 100
+  return(c(mape_fcastPeriodweekly_values,mape_Quarterly_fcastPeriod))
 }
 ```
 
 
 ```{r Forecast Function}
 myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
-  temp_date <- cbind(date,HDD_QTY)
+  temp_data <- data.frame(date,HDD_QTY)
   n <- nrow(temp_data)
-  mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
-  mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
   
   CV.Errors <- data.frame()
   for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
@@ -99,12 +97,12 @@ myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
 
   # Weekly Attainment Calculation
   MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
-  # Monthly Attainment Calculation 
-  MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
+  # Quarterly Attainment Calculation 
+  MAPE_CFG_Quarterly <- mean(CV.Errors[,2],na.rm = TRUE)
   # TO avoid the big impact of the abnormal data
-  MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+  MAPE_CFG_Quarterly_median <- median(CV.Errors[,2],na.rm = TRUE)
   
-  return(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+  return(c(MAPE_CFG_weekly,MAPE_CFG_Quarterly,MAPE_CFG_Quarterly_median))
 }
 ```
 
@@ -115,9 +113,9 @@ CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 #len <- 2 # fOr quick test
 
-forecastPeriodLen = 6
+forecastPeriodLen = 24
 # The minimum number of observations for a training set
-k <- 18 
+k <- 72 
 
 #  .export=c('HDD_Weekly')
 Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','timetk','tidyquant','broom','randomForest')) %dopar% {
@@ -128,33 +126,35 @@ Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','timetk'
      # If there are more than 24 available Weeks, try forecasting.
      if (nrow(temp_data)>(k+forecastPeriodLen)){
        # Forecast
-       myforecast(temp_data$HDD_QTY, HDD_Weekly$date, k, forecastPeriodLen)
+       myforecast(temp_data$HDD_QTY, temp_data$date, k, forecastPeriodLen)
      }
    }
 }
 
-dimnames(Results)[[2]] <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+dimnames(Results)[[2]] <- c('MAPE_weekly','MAPE_Quarterly','MAPE_Quarterly_median')
 Results <- data.frame(Results)
-indx <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+indx <- c('MAPE_weekly','MAPE_Quarterly','MAPE_Quarterly_median')
 Results[indx] <- lapply(Results[indx], function(x) as.numeric(as.character(x)))
 
 num_CFG_valid <- nrow(Results) # The total number of CFGs were forecasted.
 
 Attainment_week <- nrow(Results %>% filter(MAPE_weekly<=25))
-Attainment_Month <- nrow(Results %>% filter(MAPE_Monthly<=25))
-Attainment_Month2 <- nrow(Results %>% filter(MAPE_Monthly_median<=25))
+Attainment_Quarter <- nrow(Results %>% filter(MAPE_Quarterly<=25))
+Attainment_Quarter2 <- nrow(Results %>% filter(MAPE_Quarterly_median<=25))
 
 Attainment_weekRate = Attainment_week/num_CFG_valid
 print(percent(Attainment_weekRate))
 
-Attainment_MonthRate = Attainment_Month/num_CFG_valid
-print(percent(Attainment_MonthRate))
+Attainment_QuarterRate = Attainment_Quarter/num_CFG_valid
+print(percent(Attainment_QuarterRate))
 
-Attainment_MonthRate2 = Attainment_Month2/num_CFG_valid
-print(percent(Attainment_MonthRate2))
+Attainment_QuarterRate2 = Attainment_Quarter2/num_CFG_valid
+print(percent(Attainment_QuarterRate2))
 
 MAPE <- lapply(Results,mean)
 MAPE_median <- lapply(Results,median)
+print(MAPE)
+print(MAPE_median)
 ```
 
 ```{r close the clusters}
