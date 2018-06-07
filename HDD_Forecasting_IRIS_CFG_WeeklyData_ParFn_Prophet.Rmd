@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG using Weekly Data"
 author: "Yao"
-date: "June 6, 2018"
+date: "June 6-7, 2018"
 output: html_document
 ---
 
@@ -49,7 +49,7 @@ mycrossvalidation <- function(i,df,k,forecastPeriodLen){
   
   m <- prophet(train)
   
-  future <- make_future_dataframe(m, periods = 6, freq = 'week',include_history = FALSE)
+  future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
   fcast <- predict(m, future)
 
   pred_test <- test %>%
@@ -59,10 +59,12 @@ mycrossvalidation <- function(i,df,k,forecastPeriodLen){
   # Weekly Error Calculation
   temp <- pred_test %>%
     mutate(pct_err = .resid/y * 100, ape = abs(pct_err))
-  mape_post4weekly_values <- mean(temp$ape[3:6])
-  # Monthly Error Calculation
-  mape_monthly_after2weeks <- abs(sum(temp$yhat[3:6])-sum(temp$y[3:6]))/sum(temp$y[3:6]) * 100
-  return(c(mape_post4weekly_values,mape_monthly_after2weeks))
+  mape_fcastPeriod_values <- mean(temp$ape[forecastPeriodLen/2:forecastPeriodLen])
+  
+  # Quarterly Error Calculation
+  MAPE_Quarterly_fcastPeriod <- abs(sum(temp$yhat[forecastPeriodLen/2:forecastPeriodLen])-sum(temp$y[forecastPeriodLen/2:forecastPeriodLen]))/sum(temp$y[forecastPeriodLen/2:forecastPeriodLen]) * 100
+  # 
+  return(c(mape_fcastPeriod_values,MAPE_Quarterly_fcastPeriod))
 }
 ```
 
@@ -72,8 +74,8 @@ myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
   temp_data <- na.omit(unique(data.frame(ds = date, y = HDD_QTY)))
   n <- length(date)
   
-  mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
-  mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  mape_fcastPeriod_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  MAPE_Quarterly_fcastPeriod <- matrix(NA,n-k-forecastPeriodLen+1,1)
   
   CV.Errors <- data.frame()
   for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
@@ -82,12 +84,12 @@ myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
 
   # Weekly Attainment Calculation
   MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
-  # Monthly Attainment Calculation 
-  MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
+  # Quarterly Attainment Calculation 
+  MAPE_CFG_Quarterly <- mean(CV.Errors[,2],na.rm = TRUE)
   # TO avoid the big impact of the abnormal data
-  MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+  MAPE_CFG_Quarterly_median <- median(CV.Errors[,2],na.rm = TRUE)
   
-  return(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+  return(c(MAPE_CFG_weekly,MAPE_CFG_Quarterly,MAPE_CFG_Quarterly_median))
 }
 ```
 
@@ -98,9 +100,9 @@ CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 #len <- 2 # fOr quick test
 
-forecastPeriodLen = 6
+forecastPeriodLen = 24 # Forecast for half a year
 # The minimum number of observations for a training set
-k <- 18 
+k <- 72 # using one year and a half
 
 #  .export=c('HDD_Weekly')
 Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp')) %dopar% {
@@ -116,16 +118,16 @@ Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet
    }
 }
 
-dimnames(Results)[[2]] <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+dimnames(Results)[[2]] <- c('MAPE_weekly','MAPE_Quarterly','MAPE_Quarterly_median')
 Results <- data.frame(Results)
-indx <- c('MAPE_weekly','MAPE_Monthly','MAPE_Monthly_median')
+indx <- c('MAPE_weekly','MAPE_Quarterly','MAPE_Quarterly_median')
 Results[indx] <- lapply(Results[indx], function(x) as.numeric(as.character(x)))
 
 num_CFG_valid <- nrow(Results) # The total number of CFGs were forecasted.
 
 Attainment_week <- nrow(Results %>% filter(MAPE_weekly<=25))
-Attainment_Month <- nrow(Results %>% filter(MAPE_Monthly<=25))
-Attainment_Month2 <- nrow(Results %>% filter(MAPE_Monthly_median<=25))
+Attainment_Month <- nrow(Results %>% filter(MAPE_Quarterly<=25))
+Attainment_Month2 <- nrow(Results %>% filter(MAPE_Quarterly_median<=25))
 
 Attainment_weekRate = Attainment_week/num_CFG_valid
 print(percent(Attainment_weekRate))
@@ -154,8 +156,8 @@ date <- temp_data$date
 temp_data <- na.omit(unique(data.frame(ds = date, y = HDD_QTY)))
 n <- length(date)
 
-mape_post4weekly_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
-mape_monthly_after2weeks <- matrix(NA,n-k-forecastPeriodLen+1,1)
+mape_fcastPeriod_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+MAPE_Quarterly_fcastPeriod <- matrix(NA,n-k-forecastPeriodLen+1,1)
 
 CV.Errors <- data.frame()
 for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
@@ -164,11 +166,11 @@ for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
 
 # Weekly Attainment Calculation
 MAPE_CFG_weekly <- mean(CV.Errors[,1],na.rm = TRUE)
-# Monthly Attainment Calculation 
-MAPE_CFG_Monthly <- mean(CV.Errors[,2],na.rm = TRUE)
+# Quarterly Attainment Calculation 
+MAPE_CFG_Quarterly <- mean(CV.Errors[,2],na.rm = TRUE)
 # TO avoid the big impact of the abnormal data
-MAPE_CFG_Monthly_median <- median(CV.Errors[,2],na.rm = TRUE)
+MAPE_CFG_Quarterly_median <- median(CV.Errors[,2],na.rm = TRUE)
 
-print(c(MAPE_CFG_weekly,MAPE_CFG_Monthly,MAPE_CFG_Monthly_median))
+print(c(MAPE_CFG_weekly,MAPE_CFG_Quarterly,MAPE_CFG_Quarterly_median))
 ```
 
