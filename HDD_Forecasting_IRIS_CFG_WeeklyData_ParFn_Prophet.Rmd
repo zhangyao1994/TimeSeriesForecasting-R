@@ -71,7 +71,7 @@ mycrossvalidation <- function(i,df,k,forecastPeriodLen){
       annotate("text", x = ymd(df$ds[k+i+forecastPeriodLen/2]), y = annotatePos*0.85,
                color = palette_light()[[1]], label = "Test Region") +
       geom_rect(xmin = as.numeric(ymd(df$ds[k+i])),
-                xmax = as.numeric(ymd(df$ds[k+i+forecastPeriodLen])),
+                xmax = as.numeric(ymd(df$ds[k+i+forecastPeriodLen-1])),
                 ymin = 0, ymax = rectPos,
                 fill = palette_light()[[4]], alpha = 0.01) + 
       geom_rect(xmin = as.numeric(ymd(df$ds[1])),
