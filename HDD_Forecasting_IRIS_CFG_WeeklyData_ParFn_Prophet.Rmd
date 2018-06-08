@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG using Weekly Data"
 author: "Yao"
-date: "June 6-7, 2018"
+date: "June 6-8, 2018"
 output: html_document
 ---
 
@@ -13,6 +13,7 @@ library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 library(lubridate)
+library(tidyquant)
 
 # Load Facebook Prophet package
 library(Rcpp)
@@ -55,6 +56,36 @@ mycrossvalidation <- function(i,df,k,forecastPeriodLen){
   pred_test <- test %>%
     add_column(yhat = fcast$yhat) %>%
     mutate(.resid = fcast$yhat - y)
+  
+  if (1){
+    annotatePos <- max(df$y)*0.85
+    rectPos <- max(df$y)
+    p <- ggplot(aes(x = ds), data = df) +
+      labs(title = paste(CFGgroups[i_CFG],"HDD Weekly Demand"), x = "Fiscal Week End Date",y='Weekly Demand') +
+      #theme_tq() +
+      annotate("text", x = ymd(df$ds[k+i-k/2]), y = annotatePos,
+               color = palette_light()[[1]], label = "Train Region") +
+      annotate("text", x = ymd(df$ds[k+i+forecastPeriodLen/2]), y = annotatePos*0.85,
+               color = palette_light()[[1]], label = "Test Region") +
+      geom_rect(xmin = as.numeric(ymd(df$ds[k+i])),
+                xmax = as.numeric(ymd(df$ds[k+i+forecastPeriodLen])),
+                ymin = 0, ymax = rectPos,
+                fill = palette_light()[[4]], alpha = 0.01) + 
+      geom_rect(xmin = as.numeric(ymd(df$ds[1])),
+                xmax = as.numeric(ymd(df$ds[k+i])),
+                ymin = 0, ymax = rectPos,
+                fill = palette_light()[[3]], alpha = 0.01) + 
+      expand_limits(y = 0) +
+      geom_point(aes(x = ds, y = y), data = train, alpha = 0.5, color = palette_light()[[1]]) + 
+      geom_line(aes(x = ds, y = y), data = train, alpha = 0.5, color = palette_light()[[1]]) +
+      geom_point(aes(x = ds, y = y), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) + 
+      geom_line(aes(x = ds, y = y), data = pred_test, alpha = 0.5, color = palette_light()[[1]]) +
+      geom_point(aes(x = ds, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) + 
+      geom_line(aes(x = ds, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) +
+      theme_tq() 
+    #print(p)
+    ggsave(filename = paste(CFGgroups[i_CFG],df$ds[k+i],".png"), p, width=10)
+  }
 
   # Weekly Error Calculation
   temp <- pred_test %>%
@@ -74,8 +105,8 @@ myforecast <- function(HDD_QTY, date, k, forecastPeriodLen){
   temp_data <- na.omit(unique(data.frame(ds = date, y = HDD_QTY)))
   n <- length(date)
   
-  mape_fcastPeriod_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
-  MAPE_Quarterly_fcastPeriod <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  # mape_fcastPeriod_values <- matrix(NA,n-k-forecastPeriodLen+1,1)
+  # MAPE_Quarterly_fcastPeriod <- matrix(NA,n-k-forecastPeriodLen+1,1)
   
   CV.Errors <- data.frame()
   for (i in seq(1,(n-k-forecastPeriodLen+1),4)){
@@ -105,7 +136,7 @@ forecastPeriodLen = 24 # Forecast for half a year
 k <- 72 # using one year and a half
 
 #  .export=c('HDD_Weekly')
-Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp')) %dopar% {
+Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp','ggthemes','lubridate','tidyquant')) %dopar% {
   # For each CFG
   temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
   # If the total HDD demand after 2017-02-03 is more than 1000, try forecasting.
