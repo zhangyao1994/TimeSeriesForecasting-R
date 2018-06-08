@@ -6,6 +6,7 @@ output: html_document
 ---
 
 This is the parallel function version using Facebook 'Prophet'.
+It turned out that linear models work better.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -44,13 +45,15 @@ hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date) %>%
 
 ```{r Cross Validation Function}
 mycrossvalidation <- function(i,df,k,forecastPeriodLen){
+
   # Split into training and test sets
   train <- df %>% filter(ds < df$ds[k+i])
   test <- df %>% filter(ds >= df$ds[k+i] & ds <= df$ds[k+i+forecastPeriodLen-1])
   
-  m <- prophet(train)
+  m <- prophet(train) # growth = 'logistic' works bad..
   
   future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
+  
   fcast <- predict(m, future)
 
   pred_test <- test %>%
