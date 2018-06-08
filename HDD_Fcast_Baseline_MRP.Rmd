@@ -1,0 +1,34 @@
+---
+title: "HDDFcastBaseline"
+author: "Yao"
+date: "June 8, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## R Markdown
+
+```{r load the data}
+Fcast_MRP <- read.csv('HDD_FY19_MRP.csv')
+CFG <- read.csv('CFG.csv')
+names(CFG)[2]<-"CFG"
+```
+
+```{r Match CFG names}
+Fcast_CFG <- levels(Fcast_MRP$CFG)
+Fcast_MRP %>% group_by(CFG) %>% summarise(TotalFcast=sum(value)) -> Fcast_MRP.simplified
+
+Fcast_MRP.simplified %>% full_join(CFG) -> CFG_fcast.joined
+# no joined results because they have different names for the same CFG
+
+# remove _CFG for MRP
+Fcast_MRP.simplified$CFG = substr(Fcast_MRP.simplified$CFG,1,nchar(as.character(Fcast_MRP.simplified$CFG))-4)
+
+# join again
+Fcast_MRP.simplified %>% full_join(CFG) -> CFG_fcast.joined
+```
+
