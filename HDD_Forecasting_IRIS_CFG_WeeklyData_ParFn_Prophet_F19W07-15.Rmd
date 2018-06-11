@@ -7,7 +7,7 @@ output: html_document
 
 This is the parallel function version using Facebook 'Prophet'.
 It turned out that linear models work better.
-6/11/2018 Forecast F19W07-W15 and then compare my forecasting results to MRP.
+6/11/2018 Forecast F19W07-W15 and then compare my forecasting Prophet_fcast to MRP.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -53,6 +53,10 @@ myforecast <- function(temp_data){
   train <- df %>% filter(ds < '2018-02-23')
   test <- df %>% filter(ds >= '2018-03-23' & ds <= '2018-05-18')
   
+  if (nrow(test)<9){
+    return(NA)
+  }
+  
   m <- prophet(train) # growth = 'logistic' works bad..
   forecastPeriodLen <- 9 + 4 # focus on the later 9 weeks
   future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
@@ -91,7 +95,7 @@ myforecast <- function(temp_data){
     ggsave(filename = paste(CFGgroups[i_CFG],".png"), p, width=10)
   }
   
-  return(c(i_CFG,pred_test$yhat))
+  return(c(CFGgroups[i_CFG],pred_test$yhat))
 }
 ```
 
@@ -101,33 +105,20 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-Results <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp','ggthemes','lubridate','tidyquant')) %dopar% {
+Prophet_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp','ggthemes','lubridate','tidyquant')) %dopar% {
   # For each CFG
   temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
   # Forecast
   myforecast(temp_data)
 }
 
-dimnames(Results)[[2]] <- HDD_Weekly$date[112:120]
-Results <- data.frame(Results)
-Results[,2:10] <- lapply(Results[,2:10], function(x) as.numeric(as.character(x)))
+dimnames(Prophet_fcast)[[2]] <- c('CFG',as.character(HDD_Weekly$date[112:120]))
+Prophet_fcast <- data.frame(Prophet_fcast)
+Prophet_fcast[,2:10] <- lapply(Prophet_fcast[,2:10], function(x) as.numeric(as.character(x)))
 
-num_CFG_valid <- nrow(Results) # The total number of CFGs were forecasted.
+num_CFG_valid <- nrow(na.omit(Prophet_fcast)) # The total number of CFGs were forecasted.
 
-Attainment_week <- nrow(Results %>% filter(MAPE_weekly<=25))
-Attainment <- nrow(Results %>% filter(MAPE_9_week<=25))
-
-
-Attainment_weekRate = Attainment_week/num_CFG_valid
-print(percent(Attainment_weekRate))
-
-Attainment_Rate = Attainment/num_CFG_valid
-print(percent(Attainment_Rate))
-
-MAPE <- lapply(Results,mean, na.rm = TRUE)
-MAPE_median <- lapply(Results,median, na.rm = TRUE)
-print(MAPE)
-print(MAPE_median)
+saveRDS(Prophet_fcast, 'Prophet_fcast.rds') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}
