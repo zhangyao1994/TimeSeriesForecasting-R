@@ -54,7 +54,7 @@ myforecast <- function(temp_data){
   test <- df %>% filter(ds >= '2018-03-23' & ds <= '2018-05-18')
   
   if (nrow(test)<9){
-    return(NA)
+    return(c(CFGgroups[i_CFG],rep(NA,9)))
   }
   
   m <- prophet(train) # growth = 'logistic' works bad..
@@ -66,7 +66,7 @@ myforecast <- function(temp_data){
   pred_test <- test %>%
     add_column(yhat = fcast$yhat[5:13])
   
-  if (1){
+  if (0){
     annotatePos <- max(df$y)*0.85
     rectPos <- max(df$y)
     p <- ggplot(aes(x = ds), data = df) +
@@ -91,7 +91,6 @@ myforecast <- function(temp_data){
                 fill = palette_light()[[3]], alpha = 0.01) + 
       expand_limits(y = 0) +
       theme_tq() 
-    #print(p)
     ggsave(filename = paste(CFGgroups[i_CFG],".png"), p, width=10)
   }
   
@@ -112,12 +111,13 @@ Prophet_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','p
   myforecast(temp_data)
 }
 
-dimnames(Prophet_fcast)[[2]] <- c('CFG',as.character(HDD_Weekly$date[112:120]))
+dimnames(Prophet_fcast)[[2]] <- c('CFG',as.character(HDD_Weekly$Fiscal_Wk[112:120]))
 Prophet_fcast <- data.frame(Prophet_fcast)
 Prophet_fcast[,2:10] <- lapply(Prophet_fcast[,2:10], function(x) as.numeric(as.character(x)))
 
 num_CFG_valid <- nrow(na.omit(Prophet_fcast)) # The total number of CFGs were forecasted.
 
+Prophet_fcast %>% gather(key='date',value='Prophet_fcast',FY19W07:FY19W15) -> Prophet_fcast
 saveRDS(Prophet_fcast, 'Prophet_fcast.rds') # my_data <- readRDS(file)
 ```
 
