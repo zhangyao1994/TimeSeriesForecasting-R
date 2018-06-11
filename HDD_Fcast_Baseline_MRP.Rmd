@@ -8,6 +8,12 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+
+library(scales) # for percent
 ```
 
 ## Use MRP to establish forecast accuracy baseline
@@ -20,7 +26,7 @@ hdd_qty$CFG <- as.factor(hdd_qty$CFG)
 ```
 
 ```{r Match CFG names}
-# remove _CFG for MRP
+# remove '_CFG' for MRP
 Fcast_MRP$CFG = substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4)
 
 # Weekly data from IRIS data
@@ -41,16 +47,16 @@ HDD_Weekly %>% full_join(HDD_Weekly_MRP) -> CFG_fcast.joined
 CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
 len <- length(CFGgroups)
 
-results <- data.frame()
+results <- data.frame() # save the error calculation results
 for (i in 1:len){
   # HDD Weekly Sales
-  temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])
+  temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i]) # for certain CFG
   
-  temp_data$HDD_Fcast[temp_data$HDD_Fcast == 0] <- NA
+  temp_data$HDD_Fcast[temp_data$HDD_Fcast == 0] <- NA # 0 means no forecast
   
   temp_data <- temp_data %>%
     mutate(.resid = HDD_QTY - HDD_Fcast)  %>%
-    mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err))
+    mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err)) # calculate absolute percent error
   
   NonNAindex <- which(!is.na(temp_data$ape))
   firstNonNA <- min(NonNAindex,nrow(temp_data))
@@ -66,7 +72,7 @@ for (i in 1:len){
   
   results <- rbind(results,c(mape_fcastPeriod_values,MAPE_fcastPeriod))
   
-  if (0){
+  if (!is.na(MAPE_fcastPeriod)){
     p_week<- temp_data %>%
       ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = 1)) +
       geom_point(size = 2, color = 'blue') +
@@ -96,8 +102,8 @@ print(percent(Attainment_weekRate))
 Attainment_FcastRegionRate = Attainment_FcastRegion/num_CFG_valid
 print(percent(Attainment_FcastRegionRate))
 
-MAPE <- lapply(na.omit(results),mean)
-MAPE_median <- lapply(na.omit(results),median)
+MAPE <- lapply(na.omit(results),mean, na.rm = TRUE)
+MAPE_median <- lapply(na.omit(results),median, na.rm = TRUE)
 print(MAPE)
 print(MAPE_median)
 ```
