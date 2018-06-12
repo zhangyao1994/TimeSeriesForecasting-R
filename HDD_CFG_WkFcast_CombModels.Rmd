@@ -15,8 +15,15 @@ library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 library(lubridate)
+
+# Load timetk package
 library(tidyquant)
 library(timetk)
+library(broom)
+
+# Random Forest
+library(party)
+library(randomForest)
 
 # Load TBATS package, as well as for ARIMA
 library(forecast)
@@ -77,8 +84,7 @@ myforecast <- function(temp_data){
   # ARIMA
   if (i_CFG %in% c(11,55,87,94)){
     ARIMA_fcast <- (c(CFGgroups[i_CFG],'ARIMA',rep(NA,28)))
-  }
-  else {
+  } else {
     fit <- auto.arima(HDD.ts) # Some might fail
     fcast <- forecast(fit,h=forecastPeriodLen)
     ARIMA_fcast <- c(CFGgroups[i_CFG],'ARIMA',fcast$mean)
@@ -90,7 +96,31 @@ myforecast <- function(temp_data){
   fcast <- predict(m, future)
   Prophet_fcast <- c(CFGgroups[i_CFG],'Prophet',fcast$yhat)
   
-  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast))
+  # lm
+  # Add time series signature
+  train_augmented <- train %>%
+    tk_augment_timeseries_signature()
+  # maunually drop unvalid variables
+  temp <-
+    train_augmented %>% select(-wday.lbl,-month.lbl)
+  # Remove the column with only one value
+  temp <- Filter(function(x)(length(unique(x))>1), temp)
+  # Model using the augmented features
+  fit <- lm(y ~ ., data = na.omit(temp))
+  # We need to again augment the time series signature to the test set.
+  test_augmented <- test %>%
+    tk_augment_timeseries_signature()
+  yhat_test <- predict(fit, newdata = test_augmented)
+  lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,4),yhat_test,rep(NA,28-4-11))
+  
+  # Random Forest
+  # Model using the augmented features
+  fit <- randomForest(y ~ ., data = na.omit(temp))
+  yhat_test <- predict(fit, newdata = test_augmented)
+  RF_fcast <- c(CFGgroups[i_CFG],'timetk_RF',rep(NA,4),yhat_test,rep(NA,28-4-11))
+  
+  
+  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast))
 }
 ```
 
@@ -100,7 +130,7 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-All_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet')) %dopar% {
+All_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party')) %dopar% {
   # For each CFG
   temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
   # Forecast
@@ -115,10 +145,11 @@ dimnames(All_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
 All_fcast <- data.frame(All_fcast)
 All_fcast[,3:30] <- lapply(All_fcast[,3:30], function(x) as.numeric(as.character(x)))
 
-num_CFG_valid <- nrow(na.omit(All_fcast))/3 # The total number of CFGs were forecasted.
+num_CFG_valid <- nrow(na.omit(All_fcast))/5 # The total number of CFGs were forecasted.
 
 All_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W03:FY19W30) -> All_fcast
-saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
+
+saveRDS(na.omit(All_fcast), 'All_fcast.rds') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}
