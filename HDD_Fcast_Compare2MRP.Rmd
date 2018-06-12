@@ -1,7 +1,7 @@
 ---
 title: "HDDFcastBaseline"
 author: "Yao"
-date: "June 8-11, 2018"
+date: "June 8-12, 2018"
 output: html_document
 ---
 
@@ -28,6 +28,14 @@ Fcast_MRP$CFG = substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4)
 Fcast_Prophet <- readRDS('Prophet_fcast.rds')
 names(Fcast_Prophet)[names(Fcast_Prophet) == 'date'] <- 'Fiscal_Wk'
 
+# ARIMA
+Fcast_ARIMA <- readRDS('ARIMA_fcast.rds')
+names(Fcast_ARIMA)[names(Fcast_ARIMA) == 'date'] <- 'Fiscal_Wk'
+
+# TBATS
+Fcast_TBATS <- readRDS('TBATS_fcast.rds')
+names(Fcast_TBATS)[names(Fcast_TBATS) == 'date'] <- 'Fiscal_Wk'
+
 # HDD data from IRIS
 load("HDD_QTY_IRIS.RData")
 hdd_qty$CFG <- as.factor(hdd_qty$CFG)
@@ -43,7 +51,10 @@ Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
   summarise(MRP_Fcast = sum(value)) -> HDD_Weekly_MRP
 
 # join
-HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% left_join(Fcast_Prophet) -> CFG_fcast.joined
+HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
+  left_join(Fcast_Prophet) %>%
+  left_join(Fcast_ARIMA) %>%
+  left_join(Fcast_TBATS) -> CFG_fcast.joined
 ```
 
 ```{r Visualize HDD_QTY and Forecast MRP}
@@ -54,16 +65,17 @@ CFG_fcast.joined$MRP_Fcast[CFG_fcast.joined$MRP_Fcast == 0] <- NA # 0 means no f
 
 CFG_fcast.cleanclean <- na.omit(CFG_fcast.joined)
 
-NANAindex <- which(is.na(CFG_fcast.joined$MRP_Fcast) & is.na(CFG_fcast.joined$Prophet_fcast) & is.na(CFG_fcast.joined$HDD_QTY))
-CFG_fcast.clean <- CFG_fcast.joined[-NANAindex,]
+CFG_fcast.clean <- CFG_fcast.joined[rowSums(is.na(CFG_fcast.joined)) != ncol(CFG_fcast.joined), ] # removed nothing
 
 CFG_fcast.clean <- CFG_fcast.clean %>%
   # calculate absolute percent error for MRP
-  mutate(.resid = HDD_QTY - MRP_Fcast)  %>%
-  mutate(pct_err = .resid/HDD_QTY * 100, ape = abs(pct_err)) %>%
-  # calculate absolute percent error for MRP
-  mutate(.resid_Prophet = HDD_QTY - Prophet_fcast)  %>%
-  mutate(pct_err_Prophet = .resid_Prophet/HDD_QTY * 100, ape_Prophet = abs(pct_err_Prophet)) 
+  mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Prophet
+  mutate(ape_Prophet = abs((HDD_QTY - Prophet_fcast)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for ARIMA
+  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA_fcast)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for TBATS
+  mutate(ape_TBATS = abs((HDD_QTY - TBATS_fcast)/HDD_QTY * 100))
 
 results <- c() # save the error calculation results
 for (i in 1:len){
@@ -71,8 +83,8 @@ for (i in 1:len){
   temp_data <- filter(CFG_fcast.clean,CFG==CFGgroups[i])# for certain CFG
   
   if (nrow(temp_data)>0) {
-    if (1){
-      temp_data %>% gather(Source,HDD_QTY,HDD_QTY:Prophet_fcast) -> temp4plot
+    if (0){
+      temp_data %>% gather(Source,HDD_QTY,HDD_QTY:TBATS_fcast) -> temp4plot
       p_week<- temp4plot %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Source, color=Source)) +
         geom_point(size = 2) +
@@ -87,15 +99,15 @@ for (i in 1:len){
     }
     
     # MRP
-    NonNAindex <- which(!is.na(temp_data$ape))
+    NonNAindex <- which(!is.na(temp_data$ape_MRP))
     firstNonNA <- min(NonNAindex,nrow(temp_data))
     lastNonNA <- max(NonNAindex,0)
     # Weekly Error Calculation
-    mape_wk_MRP<- mean(temp_data$ape,na.rm = TRUE)
+    mape_wk_MRP<- mean(temp_data$ape_MRP,na.rm = TRUE)
     # 9-week Error Calculation
     MAPE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast[firstNonNA:lastNonNA])-sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]))/sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]) * 100
     
-    # prophet
+    # Prophet
     NonNAindex <- which(!is.na(temp_data$ape_Prophet))
     firstNonNA <- min(NonNAindex,nrow(temp_data))
     lastNonNA <- max(NonNAindex,0)
@@ -104,23 +116,39 @@ for (i in 1:len){
     # 9-week Error Calculation
     MAPE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet_fcast[firstNonNA:lastNonNA])-sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]))/sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]) * 100
     
-    results <- rbind(results,c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet))
+    # ARIMA
+    NonNAindex <- which(!is.na(temp_data$ape_ARIMA))
+    firstNonNA <- min(NonNAindex,nrow(temp_data))
+    lastNonNA <- max(NonNAindex,0)
+    # Weekly Error Calculation
+    mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA_fcast[firstNonNA:lastNonNA])-sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]))/sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]) * 100
+    
+    # TBATS
+    NonNAindex <- which(!is.na(temp_data$ape_TBATS))
+    firstNonNA <- min(NonNAindex,nrow(temp_data))
+    lastNonNA <- max(NonNAindex,0)
+    # Weekly Error Calculation
+    mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS_fcast[firstNonNA:lastNonNA])-sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]))/sum(temp_data$HDD_QTY[firstNonNA:lastNonNA]) * 100
+    
+    results <- rbind(results,c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS))
   }
   else {
-    results <- rbind(results,c(CFGgroups[i],rep(NA,4)))
+    results <- rbind(results,c(CFGgroups[i],rep(NA,8)))
   }
 }
 
-dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet')
+dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet')
+indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
-
-num_CFG_valid <- nrow(na.omit(results)) # The total number of CFGs were forecasted.
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
-  length(which(x<=25))/num_CFG_valid
+  length(which(x<=25))/sum(!is.na(x))
 }
 
 AttainmentRates <- lapply(results[indx],Attainment_Rate_Cal)
@@ -129,6 +157,17 @@ print(AttainmentRates)
 # MAPE
 MAPE <- lapply(results[indx],mean, na.rm = TRUE)
 MAPE_median <- lapply(results[indx],median, na.rm = TRUE)
+print(MAPE)
+print(MAPE_median)
+
+# only considering the same CFGs
+results.clean <- na.omit(results)
+AttainmentRates <- lapply(results.clean[indx],Attainment_Rate_Cal)
+print(AttainmentRates)
+
+# MAPE
+MAPE <- lapply(results.clean[indx],mean, na.rm = TRUE)
+MAPE_median <- lapply(results.clean[indx],median, na.rm = TRUE)
 print(MAPE)
 print(MAPE_median)
 ```
