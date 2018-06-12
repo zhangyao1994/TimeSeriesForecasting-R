@@ -1,0 +1,127 @@
+---
+title: "IRIS HDD Forecasting for each CFG using Weekly Data"
+author: "Yao"
+date: "June 12, 2018"
+output: html_document
+---
+
+This is the parallel function version using different models, including TBATS, Prophet, ARIMA, lm, and Random Forest.
+Forecast half a year of FY19 
+and then compare my forecasting All_fcast to MRP.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+library(timetk)
+
+# Load TBATS package, as well as for ARIMA
+library(forecast)
+
+# Load Facebook Prophet package
+library(Rcpp)
+library(prophet)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+load("HDD_QTY_IRIS.RData")
+
+# Weekly data
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r Forecast Function}
+myforecast <- function(temp_data){
+  df <- data.frame(ds = temp_data$date, y = temp_data$HDD_QTY)
+  n <- nrow(df)
+  
+  # Split into training and test sets
+  train <- df %>% filter(ds < '2018-02-23')
+  test <- df %>% filter(ds >= '2018-03-23')
+  
+  if (nrow(test)==0 | nrow(train)==0){
+    return(c(CFGgroups[i_CFG],rep(NA,29)))
+  }
+  
+  # Add time series signature
+  train_augmented <- train[nrow(train),] %>%
+    tk_augment_timeseries_signature()
+
+  HDD.ts <- ts(train$y,frequency=365.25/7, end = train_augmented$year+train_augmented$yday/365.25)
+  
+  forecastPeriodLen <- 24 + 4 # focus on the later 24 weeks/ 6 months/ half a year, one month ahead
+  
+  # TBATS
+  fit <- tbats(HDD.ts)
+  fcast <- forecast(fit,h=forecastPeriodLen)
+  TBATS_fcast <- c(CFGgroups[i_CFG],'TBATS',fcast$mean)
+  
+  # ARIMA
+  if (i_CFG %in% c(11,55,87,94)){
+    ARIMA_fcast <- (c(CFGgroups[i_CFG],'ARIMA',rep(NA,28)))
+  }
+  else {
+    fit <- auto.arima(HDD.ts) # Some might fail
+    fcast <- forecast(fit,h=forecastPeriodLen)
+    ARIMA_fcast <- c(CFGgroups[i_CFG],'ARIMA',fcast$mean)
+  }
+  
+  # Prophet
+  m <- prophet(train)
+  future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
+  fcast <- predict(m, future)
+  Prophet_fcast <- c(CFGgroups[i_CFG],'Prophet',fcast$yhat)
+  
+  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast))
+}
+```
+
+
+```{r Run the fuctions parallel}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+
+All_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet')) %dopar% {
+  # For each CFG
+  temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+  # Forecast
+  myforecast(temp_data)
+}
+
+## by week
+# WeekNames <- seq(as.Date("2018-02-23"), by = "week", length.out = 28)
+weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
+
+dimnames(All_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
+All_fcast <- data.frame(All_fcast)
+All_fcast[,3:30] <- lapply(All_fcast[,3:30], function(x) as.numeric(as.character(x)))
+
+num_CFG_valid <- nrow(na.omit(All_fcast))/3 # The total number of CFGs were forecasted.
+
+All_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W03:FY19W30) -> All_fcast
+saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
+```
+
+```{r close the clusters}
+# for Parallel package
+stopImplicitCluster()
+```
