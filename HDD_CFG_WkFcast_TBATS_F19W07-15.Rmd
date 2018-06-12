@@ -6,7 +6,7 @@ output: html_document
 ---
 
 This is the parallel function version using TBATS models.
-6/11/2018 Forecast F19W07-W15 and then compare my forecasting TBATS_fcast to MRP.
+Forecast F19W07-W15 and then compare my forecasting TBATS_fcast to MRP.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -15,6 +15,7 @@ library(ggthemes)
 options(scipen = 999)
 library(lubridate)
 library(tidyquant)
+library(timetk)
 
 # Load TBATS package
 library(forecast)
@@ -49,21 +50,25 @@ myforecast <- function(temp_data){
   
   # Split into training and test sets
   train <- df %>% filter(ds < '2018-02-23')
-  test <- df %>% filter(ds >= '2018-03-23' & ds <= '2018-05-18')
+  test <- df %>% filter(ds >= '2018-03-23')
   
-  if (nrow(test)<9){
+  if (nrow(test)==0 | nrow(train)==0){
     return(c(CFGgroups[i_CFG],rep(NA,9)))
   }
-
-  HDD.ts <- ts(train$y,frequency=365.25/7, end = 2018+(31+23)/365.25)
   
-  forecastPeriodLen <- 9 + 4 # focus on the later 9 weeks
+  # Add time series signature
+  train_augmented <- train[nrow(train),] %>%
+    tk_augment_timeseries_signature()
+
+  HDD.ts <- ts(train$y,frequency=365.25/7, end = train_augmented$year+train_augmented$yday/365.25)
+  
+  forecastPeriodLen <- 24 + 4 # focus on the later 24 weeks/ 6 months/ half a year
 
   fit <- tbats(HDD.ts)
   fcast <- forecast(fit,h=forecastPeriodLen)
   
-  pred_test <- test %>%
-    add_column(yhat = fcast$mean[5:13])
+  # pred_test <- test %>%
+  #   add_column(yhat = fcast$mean)
   
   if (0){
     annotatePos <- max(df$y)*0.85
@@ -93,7 +98,7 @@ myforecast <- function(temp_data){
     ggsave(filename = paste(CFGgroups[i_CFG],".png"), p, width=10)
   }
   
-  return(c(CFGgroups[i_CFG],pred_test$yhat))
+  return(c(CFGgroups[i_CFG],fcast$mean))
 }
 ```
 
@@ -103,20 +108,24 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-TBATS_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant')) %dopar% {
+TBATS_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk')) %dopar% {
   # For each CFG
   temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
   # Forecast
   myforecast(temp_data)
 }
 
-dimnames(TBATS_fcast)[[2]] <- c('CFG',as.character(HDD_Weekly$Fiscal_Wk[112:120]))
+## by week
+# WeekNames <- seq(as.Date("2018-02-23"), by = "week", length.out = 28)
+weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
+
+dimnames(TBATS_fcast)[[2]] <- c('CFG',as.character(weekNames))
 TBATS_fcast <- data.frame(TBATS_fcast)
-TBATS_fcast[,2:10] <- lapply(TBATS_fcast[,2:10], function(x) as.numeric(as.character(x)))
+TBATS_fcast[,2:29] <- lapply(TBATS_fcast[,2:10], function(x) as.numeric(as.character(x)))
 
 num_CFG_valid <- nrow(na.omit(TBATS_fcast)) # The total number of CFGs were forecasted.
 
-TBATS_fcast %>% gather(key='date',value='TBATS_fcast',FY19W07:FY19W15) -> TBATS_fcast
+TBATS_fcast %>% gather(key='date',value='TBATS_fcast',FY19W03:FY19W30) -> TBATS_fcast
 saveRDS(TBATS_fcast, 'TBATS_fcast.rds') # my_data <- readRDS(file)
 ```
 
