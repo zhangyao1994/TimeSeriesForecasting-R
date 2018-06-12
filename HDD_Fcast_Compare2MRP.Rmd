@@ -14,6 +14,16 @@ library(lubridate)
 library(tidyquant)
 
 library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
 ```
 
 ## Use MRP to establish forecast accuracy baseline
@@ -43,7 +53,7 @@ Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
   summarise(MRP_Fcast = sum(value)) %>%
   gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP
 
-names(Fcast_Yao)[names(Fcast_Yao) == 'All_fcast'] <- 'HDD_QTY'
+Fcast_Yao$HDD_QTY <- as.numeric(Fcast_Yao$HDD_QTY)
 
 # join
 HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
@@ -57,7 +67,6 @@ len <- length(CFGgroups)
 CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY == 0] <- NA # 0 means no forecast
 
 CFG_fcast.joined %>% spread(Model,HDD_QTY) -> CFG_fcast
-
 CFG_fcast <- na.omit(CFG_fcast) %>% 
   # calculate absolute percent error for MRP
   mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
@@ -66,10 +75,14 @@ CFG_fcast <- na.omit(CFG_fcast) %>%
   # calculate absolute percent error for ARIMA
   mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for TBATS
-  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100))
+  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for lm
+  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for TBATS
+  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100))
 
-results <- c() # save the error calculation results
-for (i in 1:len){
+results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','scales')) %dopar% {
+  # For each CFG
   # HDD Weekly Sales
   temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
   
@@ -113,16 +126,28 @@ for (i in 1:len){
     # 9-week Error Calculation
     MAPE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    results <- rbind(results,c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS))
+    # timetk lm
+    # Weekly Error Calculation
+    mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk RF
+    # Weekly Error Calculation
+    mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    return(c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS,mape_wk_lm,MAPE_fcastPeriod_lm,mape_wk_RF,MAPE_fcastPeriod_RF))
   }
   else {
-    results <- rbind(results,c(CFGgroups[i],rep(NA,8)))
+    return(c(CFGgroups[i],rep(NA,12)))
   }
 }
 
-dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS')
+dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS')
+indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 
 # Attainment Rates
@@ -142,12 +167,17 @@ Attainment_Rate_Cal <- function(x) {
 # only considering the same CFGs
 results.clean <- na.omit(results)
 AttainmentRates <- lapply(results.clean[indx],Attainment_Rate_Cal)
-print(AttainmentRates[seq(2,8,2)])
+print(AttainmentRates[seq(2,12,2)])
 
 # MAPE
 MAPE <- lapply(results.clean[indx],mean, na.rm = TRUE)
 MAPE_median <- lapply(results.clean[indx],median, na.rm = TRUE)
-print(MAPE[seq(2,8,2)])
-print(MAPE_median[seq(2,8,2)])
+print(MAPE[seq(2,12,2)])
+print(MAPE_median[seq(2,12,2)])
+```
+
+```{r close the cluster}
+# for Parallel package
+stopImplicitCluster()
 ```
 
