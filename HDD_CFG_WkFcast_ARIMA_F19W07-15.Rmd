@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG using Weekly Data"
 author: "Yao"
-date: "June 11, 2018"
+date: "June 11-12, 2018"
 output: html_document
 ---
 
@@ -51,7 +51,7 @@ myforecast <- function(temp_data){
   train <- df %>% filter(ds < '2018-02-23')
   test <- df %>% filter(ds >= '2018-03-23' & ds <= '2018-05-18')
   
-  if (nrow(test)<9){
+  if (nrow(test)<9 | i_CFG %in% c(11,55,87,94)){
     return(c(CFGgroups[i_CFG],rep(NA,9)))
   }
 
@@ -59,7 +59,8 @@ myforecast <- function(temp_data){
   
   forecastPeriodLen <- 9 + 4 # focus on the later 9 weeks
 
-  #fit <- auto.arima(HDD.ts) #i_CFG==11 errors.
+  fit <- auto.arima(HDD.ts) #i_CFG==11 errors.
+  #fit <- tbats(HDD.ts)
   fcast <- forecast(fit,h=forecastPeriodLen)
   
   pred_test <- test %>%
