@@ -51,7 +51,7 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-load("HDD_QTY_IRIS.RData")
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
 
 # Weekly data
 hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
@@ -64,11 +64,14 @@ myforecast <- function(temp_data){
   n <- nrow(df)
   
   # Split into training and test sets
-  train <- df %>% filter(ds < '2018-02-23')
+  train <- df %>% filter(ds < '2018-03-23') # No time ahead
   test <- df %>% filter(ds >= '2018-03-23')
   
-  if (nrow(test)==0 | nrow(train)==0){
-    return(c(CFGgroups[i_CFG],rep(NA,29)))
+  WeekAhead <- 0  # no time ahead
+  forecastPeriodLen <- 24 + WeekAhead
+  
+  if (nrow(test)<1 | nrow(train)<2){
+    return(c(CFGgroups[i_CFG],rep(NA,forecastPeriodLen+1)))
   }
   
   # Add time series signature
@@ -77,8 +80,6 @@ myforecast <- function(temp_data){
 
   HDD.ts <- ts(train$y,frequency=365.25/7, end = train_augmented$year+train_augmented$yday/365.25)
   
-  forecastPeriodLen <- 24 + 4 # focus on the later 24 weeks/ 6 months/ half a year, one month ahead
-  
   # TBATS
   fit <- tbats(HDD.ts)
   fcast <- forecast(fit,h=forecastPeriodLen)
@@ -86,7 +87,7 @@ myforecast <- function(temp_data){
   
   # ARIMA
   if (i_CFG %in% c(11,55,87,94)){
-    ARIMA_fcast <- (c(CFGgroups[i_CFG],'ARIMA',rep(NA,28)))
+    ARIMA_fcast <- (c(CFGgroups[i_CFG],'ARIMA',rep(NA,forecastPeriodLen)))
   } else {
     fit <- auto.arima(HDD.ts) # Some might fail
     fcast <- forecast(fit,h=forecastPeriodLen)
@@ -107,20 +108,24 @@ myforecast <- function(temp_data){
   temp <-
     train_augmented %>% select(-wday.lbl,-month.lbl,-diff)
   # Remove the column with only one value
-  temp <- Filter(function(x)(length(unique(x))>1), temp)
+  if (nrow(temp)>1) {
+    temp <- Filter(function(x)(length(unique(x))>1), temp)
+  }
+  
   # Model using the augmented features
   fit <- lm(y ~ ., data = na.omit(temp))
   # We need to again augment the time series signature to the test set.
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,4),yhat_test,rep(NA,28-4-11))
+  AvailableWeek <- 11
+  lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
   # Model using the augmented features
   fit <- randomForest(y ~ ., data = na.omit(temp))
   yhat_test <- predict(fit, newdata = test_augmented)
-  RF_fcast <- c(CFGgroups[i_CFG],'timetk_RF',rep(NA,4),yhat_test,rep(NA,28-4-11))
+  RF_fcast <- c(CFGgroups[i_CFG],'timetk_RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Xgboost
   # Train the xgboost model using the "xgboost" function
@@ -129,7 +134,7 @@ myforecast <- function(temp_data){
   # Make the predictions on the test data
   temp_test <- test_augmented[,colnames(temp)]
   preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-  Xgboost_fcast <- c(CFGgroups[i_CFG],'timetk_Xgboost',rep(NA,4),preds,rep(NA,28-4-11))
+  Xgboost_fcast <- c(CFGgroups[i_CFG],'timetk_Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast))
 }
@@ -149,16 +154,16 @@ Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','fore
 }
 
 ## by week
-# WeekNames <- seq(as.Date("2018-02-23"), by = "week", length.out = 28)
-weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
+#weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
+weekNames <- c(sprintf("FY19W0%d", 7:9),sprintf("FY19W%d", 10:30))
 
 dimnames(Comb_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
 Comb_fcast <- data.frame(Comb_fcast)
-Comb_fcast[,3:30] <- lapply(Comb_fcast[,3:30], function(x) as.numeric(as.character(x)))
+Comb_fcast[,3:ncol(Comb_fcast)] <- lapply(Comb_fcast[,3:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
 
 num_CFG_valid <- nrow(Comb_fcast)/6 # The total number of CFGs were forecasted.
 
-Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W03:FY19W30) -> All_fcast
+Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
 
 # For plot, do not delete the NA for now.
 saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
