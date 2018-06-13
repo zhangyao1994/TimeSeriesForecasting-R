@@ -1,7 +1,7 @@
 ---
-title: "HDDFcastBaseline"
+title: "HDD Fcast Evaluatin"
 author: "Yao"
-date: "June 8-12, 2018"
+date: "June 8-13, 2018"
 output: html_document
 ---
 
@@ -53,11 +53,9 @@ Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
   summarise(MRP_Fcast = sum(value)) %>%
   gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP
 
-Fcast_Yao$HDD_QTY <- as.numeric(Fcast_Yao$HDD_QTY)
-
 # join
 HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
-  full_join(Fcast_Yao) %>% na.omit() -> CFG_fcast.joined
+  full_join(Fcast_Yao) -> CFG_fcast.joined
 ```
 
 ```{r Visualize HDD_QTY and Forecast MRP}
@@ -66,7 +64,7 @@ len <- length(CFGgroups)
 
 CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY == 0] <- NA # 0 means no forecast
 
-CFG_fcast.joined %>% spread(Model,HDD_QTY) -> CFG_fcast
+CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
 CFG_fcast <- na.omit(CFG_fcast) %>% 
   # calculate absolute percent error for MRP
   mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
@@ -78,8 +76,10 @@ CFG_fcast <- na.omit(CFG_fcast) %>%
   mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for lm
   mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for TBATS
-  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100))
+  # calculate absolute percent error for RF
+  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Xgboost
+  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
 
 results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','scales')) %dopar% {
   # For each CFG
@@ -91,7 +91,7 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
       p_week<- temp_data %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
         geom_point(size = 2) +
-        geom_line(size = 1.5,alpha=0.8) +
+        geom_line(size = 1.5,alpha=0.6) +
         labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
         theme_minimal(base_size = 14) + 
         scale_color_tableau('tableau10medium') + 
@@ -138,21 +138,27 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
     # 9-week Error Calculation
     MAPE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    return(c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS,mape_wk_lm,MAPE_fcastPeriod_lm,mape_wk_RF,MAPE_fcastPeriod_RF))
+    # timetk Xgboost
+    # Weekly Error Calculation
+    mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    return(c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS,mape_wk_lm,MAPE_fcastPeriod_lm,mape_wk_RF,MAPE_fcastPeriod_RF,mape_wk_Xgboost,MAPE_fcastPeriod_Xgboost))
   }
   else {
-    return(c(CFGgroups[i],rep(NA,12)))
+    return(c(CFGgroups[i],rep(NA,14)))
   }
 }
 
-dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF')
+dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF')
+indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
-  length(which(x<=25))/sum(!is.na(x))
+  length(which(x<=20))/sum(!is.na(x))
 }
 
 # AttainmentRates <- lapply(results[indx],Attainment_Rate_Cal)
@@ -167,17 +173,51 @@ Attainment_Rate_Cal <- function(x) {
 # only considering the same CFGs
 results.clean <- na.omit(results)
 AttainmentRates <- lapply(results.clean[indx],Attainment_Rate_Cal)
-print(AttainmentRates[seq(2,12,2)])
 
 # MAPE
 MAPE <- lapply(results.clean[indx],mean, na.rm = TRUE)
 MAPE_median <- lapply(results.clean[indx],median, na.rm = TRUE)
-print(MAPE[seq(2,12,2)])
-print(MAPE_median[seq(2,12,2)])
+
+# combine
+Eval.resuls <- rbind(AttainmentRates,MAPE,MAPE_median)
+Eval.resuls_fcastRegion <- data.frame(Eval.resuls[,seq(2,14,2)])
+dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+
+Eval.resuls_wk <- data.frame(Eval.resuls[,seq(1,14,2)])
+dimnames(Eval.resuls_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
 ```
 
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
+```
+
+```{r set up Plotly}
+library(plotly)
+# Sys.setenv("plotly_username"="zhangyao1994")
+# Sys.setenv("plotly_api_key"="HAeq9WWHFDV9mcxbBex9") # Does not work? Try this at home.
+```
+
+```{r Create a chart for visualization}
+i=2
+temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
+
+p <- temp_data %>%
+  ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+
+ggplotly(p)
+
+# Create a shareable link to your chart
+# Set up API credentials: https://plot.ly/r/getting-started
+# chart_link <- api_create(p, filename="one CFG Example")
+# chart_link
+
 ```
 
