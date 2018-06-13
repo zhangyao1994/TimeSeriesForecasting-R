@@ -1,7 +1,7 @@
 ---
 title: "IRIS HDD Forecasting for each CFG using Weekly Data"
 author: "Yao"
-date: "June 12, 2018"
+date: "June 12-13, 2018"
 output: html_document
 ---
 
@@ -15,6 +15,9 @@ library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 library(lubridate)
+
+# Load egboost relevant libraries
+library(quantmod); library(TTR); library(xgboost);
 
 # Load timetk package
 library(tidyquant)
@@ -102,7 +105,7 @@ myforecast <- function(temp_data){
     tk_augment_timeseries_signature()
   # maunually drop unvalid variables
   temp <-
-    train_augmented %>% select(-wday.lbl,-month.lbl)
+    train_augmented %>% select(-wday.lbl,-month.lbl,-diff)
   # Remove the column with only one value
   temp <- Filter(function(x)(length(unique(x))>1), temp)
   # Model using the augmented features
@@ -119,8 +122,16 @@ myforecast <- function(temp_data){
   yhat_test <- predict(fit, newdata = test_augmented)
   RF_fcast <- c(CFGgroups[i_CFG],'timetk_RF',rep(NA,4),yhat_test,rep(NA,28-4-11))
   
+  # Xgboost
+  # Train the xgboost model using the "xgboost" function
+  dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
+  xgModel = xgboost(data = dtrain, nrounds = ceiling(sqrt(nrow(dtrain)))) # sqrt(nrow(dtrain)), I guess
+  # Make the predictions on the test data
+  temp_test <- test_augmented[,colnames(temp)]
+  preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
+  Xgboost_fcast <- c(CFGgroups[i_CFG],'timetk_Xgboost',rep(NA,4),preds,rep(NA,28-4-11))
   
-  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast))
+  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast))
 }
 ```
 
@@ -130,7 +141,7 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-All_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party')) %dopar% {
+Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
   # For each CFG
   temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
   # Forecast
@@ -141,15 +152,16 @@ All_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forec
 # WeekNames <- seq(as.Date("2018-02-23"), by = "week", length.out = 28)
 weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
 
-dimnames(All_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
-All_fcast <- data.frame(All_fcast)
-All_fcast[,3:30] <- lapply(All_fcast[,3:30], function(x) as.numeric(as.character(x)))
+dimnames(Comb_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
+Comb_fcast <- data.frame(Comb_fcast)
+Comb_fcast[,3:30] <- lapply(Comb_fcast[,3:30], function(x) as.numeric(as.character(x)))
 
-num_CFG_valid <- nrow(na.omit(All_fcast))/5 # The total number of CFGs were forecasted.
+num_CFG_valid <- nrow(Comb_fcast)/6 # The total number of CFGs were forecasted.
 
-All_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W03:FY19W30) -> All_fcast
+Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W03:FY19W30) -> All_fcast
 
-saveRDS(na.omit(All_fcast), 'All_fcast.rds') # my_data <- readRDS(file)
+# For plot, do not delete the NA for now.
+saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}
