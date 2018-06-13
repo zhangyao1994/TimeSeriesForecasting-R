@@ -1,0 +1,40 @@
+---
+title: "HigherLevelClusters"
+author: "Yao"
+date: "June 13, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Higher Level Clusters than CFG Explory
+
+```{r load data}
+# HDD data from IRIS
+load("HDD_QTY_IRIS.RData")
+
+# Weekly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly
+```
+
+```{r Extract info from CFG names}
+CFG <- data.frame(unique(hdd_qty$CFG))
+dimnames(CFG)[[2]] <- 'CFG'
+# Test on CFG 150 unique names first
+# Group by Interface
+GroupbyInterface <- function(x){}
+CFG$Interface <- apply(CFG, 1, ifelse(grep('SAS12G',CFG), "SAS12G",
+                                  ifelse(grep('SAS6G',CFG), "SAS6G",
+                                         ifelse(grep('SATA*.6G',CFG),'SATA6G','NA'))))
+# Capacity
+
+# RPM
+
+# Form factor
+```
+
+
