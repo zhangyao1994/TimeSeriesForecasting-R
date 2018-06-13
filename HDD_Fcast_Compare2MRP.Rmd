@@ -30,7 +30,7 @@ registerDoParallel(no_cores)
 
 ```{r load the data}
 # MRP
-Fcast_MRP <- read.csv('HDD_FY19_MRP.csv') 
+Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv') 
 # remove '_CFG' for MRP
 Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
 
@@ -38,7 +38,7 @@ Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CF
 Fcast_Yao <- readRDS('All_fcast.rds')
 
 # HDD data from IRIS
-load("HDD_QTY_IRIS.RData")
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
 hdd_qty$CFG <- as.factor(hdd_qty$CFG)
 ```
 
@@ -87,7 +87,7 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
   temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
   
   if (nrow(temp_data)>0) {
-    if (1){
+    if (0){
       p_week<- temp_data %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
         geom_point(size = 2) +
@@ -158,7 +158,7 @@ results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
-  length(which(x<=20))/sum(!is.na(x))
+  length(which(x<=20))/sum(!is.na(x))*100
 }
 
 # AttainmentRates <- lapply(results[indx],Attainment_Rate_Cal)
