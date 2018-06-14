@@ -16,42 +16,14 @@ knitr::opts_chunk$set(echo = TRUE)
 load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
 
 # CFG information
-CFG.info <- read.csv("~/Yao_Excels/HDD_FY16_FY19M03_Transformed_filledAllFiscalQuarter.csv")
-
-colnames(CFG.info)
-CFG.info %>% select(CFG,Interface,Interface_Speed,Capacity,RPM,Interface_All,Form_Factor) %>%
-  unique() -> CFG.attributes
-
-# remove '_CFG' for CFG.attributes
-CFG.attributes$CFG = as.factor(substr(CFG.attributes$CFG,1,nchar(as.character(CFG.attributes$CFG))-4))
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
 
 ```
 
 ```{r Join Tables to get CFG info}
 CFG.names <- data.frame(unique(hdd_qty$CFG))
 dimnames(CFG.names)[[2]] <- 'CFG'
-CFG.names %>% left_join(CFG.attributes) -> CFG.names.joined
-```
-
-
-```{r Extract info from CFG names}
-# Interface
-NameInterface <- function(x){
-  ifelse(grep('SAS12G',CFG), "SAS12G",
-                                  ifelse(grep('SAS6G',CFG), "SAS6G",
-                                         ifelse(grep('SATA*.6G',CFG),'SATA6G','NA')))
-}
-
-colnames(CFG.names.joined)
-CFG.names.joined[is.na("Interface")]$Interface <- apply(CFG.names.joined[is.na("Interface"),], 1,NameInterface)
-
-# It might be easier by joining tables.
-
-# Capacity. Mannually Done.
-
-# RPM. Mannually Done.
-
-# Form factor. Mannually Done.
+CFG.names %>% left_join(CFG.info) -> CFG.names.joined
 ```
 
 
