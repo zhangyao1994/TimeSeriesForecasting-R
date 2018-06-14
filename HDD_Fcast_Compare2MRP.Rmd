@@ -35,6 +35,7 @@ Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv')
 Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
 
 # All mine
+setwd("~/Yao_Rdata")
 Fcast_Yao <- readRDS('All_fcast.rds')
 
 # HDD data from IRIS
@@ -87,7 +88,7 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
   temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
   
   if (nrow(temp_data)>0) {
-    if (0){
+    if (1){
       p_week<- temp_data %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
         geom_point(size = 2) +
