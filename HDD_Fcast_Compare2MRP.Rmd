@@ -1,7 +1,7 @@
 ---
 title: "HDD Fcast Evaluatin"
 author: "Yao"
-date: "June 8-13, 2018"
+date: "June 8-14, 2018"
 output: html_document
 ---
 
@@ -88,7 +88,7 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
   temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
   
   if (nrow(temp_data)>0) {
-    if (1){
+    if (0){
       p_week<- temp_data %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
         geom_point(size = 2) +
@@ -186,6 +186,22 @@ dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm'
 
 Eval.resuls_wk <- data.frame(Eval.resuls[,seq(1,14,2)])
 dimnames(Eval.resuls_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+```
+
+```{r Visualize Errors}
+ErrorResults4plot <- data.frame(t(Eval.resuls_fcastRegion))
+
+ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+
+ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(AttainmentRates),fill=Models)) + geom_bar(stat = "identity") +
+  labs(title = 'Model Comparison by Attainment Rates', x = "Models", y = "Attainment Rates (%)") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium')
+
+ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(MAPE),fill=Models)) + geom_bar(stat = "identity") +
+  labs(title = 'Model Comparison by MAPE', x = "Models", y = "MAPE (%)") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium')
 ```
 
 ```{r close the cluster}
