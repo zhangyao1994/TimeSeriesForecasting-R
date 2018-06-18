@@ -1,0 +1,350 @@
+---
+title: "IRIS HDD Data Exploratory Analytics"
+author: "Yao"
+date: "May 31 - June 4, 2018"
+output: html_document
+---
+
+Latet update: 6/18/2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(ggthemes)
+options(scipen = 999)
+
+# !diagnostics off
+
+blank_theme <- theme_minimal()+
+  theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.border = element_blank(),
+  panel.grid=element_blank(),
+  axis.ticks = element_blank(),
+  plot.title=element_text(size=14)
+  )
+
+```
+
+## Clean HDD Demand Data Explorary Analytics
+
+I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
+```{r load the data}
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+HDD_data <- hdd_qty
+rm(hdd_qty)
+```
+
+```{r plot overall HDD_QTY}
+# Check the available data
+LastWk <- tail(unique(HDD_data$Fiscal_Wk), n=1)
+LastMon <- tail(unique(HDD_data$Fiscal_Mo), n=1)
+LastQtr <- tail(unique(HDD_data$Fiscal_Qtr), n=1)
+
+# HDD Weekly Sales
+week_data <- HDD_data %>% group_by(Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+
+# HDD Monthly Sales
+month_data <- HDD_data %>% group_by(Fiscal_Mo) %>%
+  summarise(Fiscal_Mo_QTY=sum(PART_QTY)) #%>% 
+  #filter(Fiscal_Mo<LastMon)
+
+# HDD Quarterly Sales
+quarter_data <- HDD_data %>% group_by(Fiscal_Qtr) %>%
+  summarise(Fiscal_Qtr_QTY=sum(PART_QTY)) #%>%
+  #filter(Fiscal_Qtr<LastQtr)
+
+# Plot together
+# ? I am not sure how to put week, month, and quarter together.
+ 
+# Plot separately but fix the axis range
+p_week <- week_data %>%
+  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=1)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Weekly Sales FY17W01-',LastWk, sep = ""), x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_week
+
+p_month <- month_data %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=1)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Monthly Sales FY17M01-',LastMon, sep = ""), x = "Fiscal Month", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000)) +
+  geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
+  # theme(axis.text.x=element_blank())
+p_month
+
+p_quarter <- quarter_data %>%
+  ggplot(aes(x=Fiscal_Qtr,y=Fiscal_Qtr_QTY,group=1)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  #geom_bar(stat = 'identity') +
+  labs(title = paste('Overall HDD Quarterly Sales FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  #scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_quarter
+```
+
+
+```{r by Region}
+# HDD Monthly Sales by Region
+temp_data <- HDD_data %>% 
+  group_by(RGN_DESC,Fiscal_Mo) %>%
+  summarise(RGN_DESC_Fiscal_Mo_QTY=sum(PART_QTY)) #%>%
+ # filter(Fiscal_Mo<'FY19M04') 
+  
+p_Monthly_RGN_DESC <- temp_data %>%
+  ggplot(aes(x=Fiscal_Mo,y=RGN_DESC_Fiscal_Mo_QTY,group=RGN_DESC, colour=RGN_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Weekly Sales by Region FY17M01-',LastMon, sep = ""), x = "Fiscal Month", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_Monthly_RGN_DESC
+
+temp_data <- HDD_data %>% 
+  group_by(RGN_DESC,Fiscal_Qtr) %>%
+  summarise(RGN_DESC_Fiscal_Qtr_QTY=sum(PART_QTY)) # %>%
+  # filter(Fiscal_Qtr<'FY19Q2')
+  
+# HDD Quarterly Sales by Region
+p_Quarterly_Region <- temp_data %>%
+  ggplot(aes(x=Fiscal_Qtr,y=RGN_DESC_Fiscal_Qtr_QTY,group=RGN_DESC, colour=RGN_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Quarterly Sales by Region FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  #scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_Quarterly_Region
+
+temp_data %>% group_by(RGN_DESC) %>%
+  summarise(RGN_QTY = sum(RGN_DESC_Fiscal_Qtr_QTY)) -> temp_data
+
+temp_data$RGN_Perecent <- temp_data$RGN_QTY/sum(temp_data$RGN_QTY)
+
+p_Quarterly_Region_Pie <- temp_data %>%
+  ggplot(aes(x="",y=RGN_Perecent,fill=RGN_DESC)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y") +
+  labs(title = paste('Overall HDD Quarterly Sales by Region FY17Q1-',LastQtr, sep = ""),fill="Region")
+
+p_Quarterly_Region_Pie <- p_Quarterly_Region_Pie +  blank_theme +
+  theme(axis.text.x=element_blank()) +
+  #scale_color_tableau('tableau10medium') + 
+  geom_text(aes(y = RGN_Perecent/3 + c(0, cumsum(RGN_Perecent)[-length(RGN_Perecent)]), 
+            label = percent(RGN_Perecent)), size=5)
+p_Quarterly_Region_Pie
+```
+
+```{r customer analysis}
+# Only by Customer
+length(unique(HDD_data$Customer)) # WOw, so many customers!
+
+HDD_data %>% group_by(Customer) %>%
+  summarise(Customer_QTY=sum(PART_QTY)) %>%
+  arrange(desc(Customer_QTY))->temp_data
+
+temp_sum <- sum(temp_data$Customer_QTY)
+temp_data$Customer_Perecent <- temp_data$Customer_QTY/temp_sum*100
+
+temp_data[2:31,] -> temp_data
+sum(temp_data$Customer_Perecent)
+# The top 30 customers bought 23.00% of the HDD from FY17Q1-FY19Q2.
+# Ignore the unknown customers.
+
+# By Customer and LOB
+HDD_data %>%
+  group_by(Customer,LOB_DESC) %>%
+  summarise(Customer_LOB_QTY=sum(PART_QTY)) %>%
+  arrange(desc(Customer_LOB_QTY),Customer,LOB_DESC)->temp_data
+
+LOBgroups <- levels(factor(temp_data$LOB_DESC))
+
+len <- length(LOBgroups)
+
+x=list()
+for (i in 1:len){
+  temp_data %>% filter(LOB_DESC==LOBgroups[i]) %>%
+    summarise(Customer_QTY=sum(Customer_LOB_QTY)) %>%
+    arrange(desc(Customer_QTY)) -> temp
+  temp_sum <- sum(temp$Customer_QTY)
+  filter(temp,!Customer=='Unknown_Customer') -> temp
+  top30 <- sum(temp[1:30,]$Customer_QTY)
+  x[i] <- top30/temp_sum*100
+}
+x
+```
+
+
+```{r Monthly and Quarterly Sales by Customer}
+# HDD Monthly Sales by Customer FY17M04-FY19M03
+HDD_data %>%
+  group_by(Customer,Fiscal_Mo) %>%
+  summarise(Customer_Fiscal_Mo_QTY=sum(PART_QTY)) %>%
+  arrange(desc(Customer_Fiscal_Mo_QTY)) %>% head(30)-> temp_data
+
+p_Monthly_Customer <- temp_data %>%
+  ggplot(aes(x=Fiscal_Mo,y=Customer_Fiscal_Mo_QTY,group=Customer, colour=Customer)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Monthly Sales Top 30 Customers FY17M01-',LastMon, sep = ""), x = "Fiscal Month", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  theme(legend.position = '',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,150000))
+p_Monthly_Customer
+# ggplotly(p_Monthly_Customer)
+
+HDD_data %>% 
+  group_by(Customer,Fiscal_Qtr,LOB_DESC) %>%
+  summarise(Customer_Fiscal_Qtr_QTY=sum(PART_QTY)) %>%
+  #filter(Fiscal_Qtr<'FY19Q2') %>%
+  arrange(desc(Customer_Fiscal_Qtr_QTY)) -> temp_data
+
+LOBgroups <- levels(factor(temp_data$LOB_DESC))
+len <- length(LOBgroups)
+
+TopNum <- 30
+top30Customer <- matrix(NA,len,TopNum)
+data4plot <- data.frame()
+
+for (i in 1:len){
+  # select a LOB
+  temp_data %>% filter(LOB_DESC==LOBgroups[i]) -> temp_data_LOB
+  # Select the top 30 customers
+  temp_data_LOB  %>%
+    group_by(Customer) %>%
+    summarise(Customer_QTY=sum(Customer_Fiscal_Qtr_QTY)) %>%
+    arrange(desc(Customer_QTY)) -> temp
+  filter(temp,!Customer=='Unknown_Customer') -> temp
+  top30Customer[i,] <- temp$Customer[1:TopNum]
+  temp_data_LOB %>%
+    filter(Customer %in% top30Customer[i,]) %>% 
+    group_by(Fiscal_Qtr) %>%
+    summarise(Customer_Fiscal_Qtr_QTY=sum(Customer_Fiscal_Qtr_QTY)) -> temp_bigCustomers
+  temp_bigCustomers$BigCusFlag <- 'Big Customer'
+  temp_data_LOB %>%
+    filter(!(Customer %in% top30Customer[i,])) %>% 
+    group_by(Fiscal_Qtr) %>%
+    summarise(Customer_Fiscal_Qtr_QTY=sum(Customer_Fiscal_Qtr_QTY)) -> temp_otherCustomers
+  temp_otherCustomers$BigCusFlag <- 'Other Customer'
+  rbind(temp_bigCustomers,temp_otherCustomers) -> temp
+  temp$LOB <- LOBgroups[i]
+  data4plot <- rbind(data4plot,temp)
+}
+
+# HDD Quarterly Sales by Customer and LOB FY17-FY19M03
+p_Quarterly_Customer_LOB <- data4plot %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=Customer_Fiscal_Qtr_QTY,group=BigCusFlag, colour=BigCusFlag)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  facet_wrap(~LOB,scales = "free_y") +
+  labs(title = paste('Overall HDD Quarterly Sales by Customers FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,1500000))
+p_Quarterly_Customer_LOB
+```
+
+```{r by LOB_DESC}
+# HDD Monthly Sales by LOB_DESC FY17M04-FY19M03
+HDD_data %>% 
+  group_by(LOB_DESC,Fiscal_Mo) %>%
+  summarise(LOB_DESC_Fiscal_Mo_QTY=sum(PART_QTY)) -> temp_data
+  
+p_Monthly_LOB_DESC <- temp_data %>%
+  ggplot(aes(x=Fiscal_Mo,y=LOB_DESC_Fiscal_Mo_QTY,group=LOB_DESC, colour=LOB_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Weekly Sales by LOB FY17M01-',LastMon, sep = ""), x = "Fiscal Month", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_Monthly_LOB_DESC
+
+HDD_data %>% 
+  group_by(LOB_DESC,Fiscal_Qtr) %>%
+  summarise(LOB_DESC_Fiscal_Qtr_QTY=sum(PART_QTY)) ->temp_data
+  
+# HDD Quarterly Sales by LOB_DESC FY17-FY19M03
+p_Quarterly_LOB_DESC <- temp_data %>%
+  ggplot(aes(x=Fiscal_Qtr,y=LOB_DESC_Fiscal_Qtr_QTY,group=LOB_DESC, colour=LOB_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Quarterly Sales by LOB FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity",colour='LOB') + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  #scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+p_Quarterly_LOB_DESC
+
+```
+
+```{r by BRAND_CATG_DESC}
+# HDD Monthly Sales by LOB_DESC FY17M04-FY19M03
+length(unique(HDD_data$BRAND_CATG_DESC))
+# 127 BRAND_CATG_DESC is too much to plot toghether.
+# HDD_data %>% 
+#   group_by(BRAND_CATG_DESC,Fiscal_Mo) %>%
+#   summarise(BRAND_CATG_DESC_Fiscal_Mo_QTY=sum(PART_QTY)) %>%
+#   filter(Fiscal_Mo>'FY17M03' & Fiscal_Mo<'FY19M04') -> temp_data
+#   
+# p_Monthly_BRAND_CATG_DESC <- temp_data %>%
+#   ggplot(aes(x=Fiscal_Mo,y=BRAND_CATG_DESC_Fiscal_Mo_QTY,group=BRAND_CATG_DESC, colour=BRAND_CATG_DESC)) +
+#   geom_point(size = 2) +
+#   geom_line(size = 1.5) +
+#   labs(title = 'HDD Monthly Sales by BRAND_CATG_DESC FY17M04-FY19M03', x = "Fiscal Month", y = "Part Quantity") + 
+#   theme_minimal(base_size = 18) + 
+#   scale_color_tableau('tableau10medium') + 
+#   scale_x_discrete(breaks = c('FY17M04','FY18M01', 'FY19M01')) +
+#   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+#   scale_y_continuous(label=comma) + expand_limits(y = 0)
+# p_Monthly_BRAND_CATG_DESC
+# 
+# HDD_data %>% 
+#   group_by(BRAND_CATG_DESC,Fiscal_Qtr) %>%
+#   summarise(BRAND_CATG_DESC_Fiscal_Qtr_QTY=sum(PART_QTY)) %>%
+#   filter(Fiscal_Qtr>'FY17Q1' & Fiscal_Qtr<'FY19Q2')->temp_data
+#   
+# # HDD Quarterly Sales by BRAND_CATG_DESC FY17-FY19M03
+# p_Quarterly_BRAND_CATG_DESC <- temp_data %>%
+#   ggplot(aes(x=Fiscal_Qtr,y=BRAND_CATG_DESC_Fiscal_Qtr_QTY,group=BRAND_CATG_DESC, colour=BRAND_CATG_DESC)) +
+#   geom_point(size = 2) +
+#   geom_line(size = 1.5) +
+#   labs(title = 'Overall HDD Quarterly Sales by LOB FY17Q2-FY19Q1', x = "Fiscal Quarter", y = "Part Quantity",colour='LOB') + 
+#   theme_minimal(base_size = 14) + 
+#   scale_color_tableau('tableau10medium') + 
+#   scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
+#   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+#   scale_y_continuous(label=comma) + expand_limits(y = 0)
+# p_Quarterly_BRAND_CATG_DESC
+```
+
