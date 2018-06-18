@@ -1,0 +1,55 @@
+---
+title: "IRIS HDD Data Exploratory Analytics for each CFG"
+author: "Yao"
+date: "June 18, 2018"
+output: html_document
+---
+
+Latest update: 6/18/2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(ggthemes)
+library(plotly)
+options(scipen = 999)
+```
+
+## Clean HDD Demand Data Explorary Analytics
+
+I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
+```{r load the data}
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+```
+
+```{r CFG level exploration, echo=TRUE}
+hdd_qty %>% 
+  group_by(CFG,Fiscal_Qtr) %>%
+  summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) -> temp_qtr
+
+temp_qtr$CFG <- as.factor(temp_qtr$CFG)
+
+HDD.data <- temp_qtr %>% spread(Fiscal_Qtr,CFG_Fiscal_Qtr_QTY) %>% data.frame()
+
+HDD.data %>% select(starts_with("FY")) %>% scale() %>% data.frame() -> HDD.data.scaled
+
+HDD.scaled <- data.frame(CFG=unique(temp_qtr$CFG),HDD.data.scaled) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+
+AllCFG_Qtr.scaled <- HDD.scaled %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFG)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 12) + 
+  #scale_color_tableau('tableau10medium') + 
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+# ggplotly(AllCFG_Qtr.scaled)# http://localhost:15618/session/viewhtml26488f61a3d/index.html
+```
+
+```{r kmeans cluster}
+
+```
+
+
