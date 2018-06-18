@@ -1,0 +1,116 @@
+---
+title: "IRIS HDD Data Exploratory Analytics for each CFG"
+author: "Yao"
+date: "May 31 - June 1, 2018"
+output: html_document
+---
+
+Latest update: 6/18/2018
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(ggthemes)
+options(scipen = 999)
+
+# !diagnostics off
+
+blank_theme <- theme_minimal()+
+  theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.border = element_blank(),
+  panel.grid=element_blank(),
+  axis.ticks = element_blank(),
+  plot.title=element_text(size=14)
+  )
+
+```
+
+## Clean HDD Demand Data Explorary Analytics
+
+I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
+```{r load the data}
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+HDD_data <- hdd_qty
+rm(hdd_qty)
+```
+
+```{r CFG level exploration, echo=TRUE}
+HDD_data %>% 
+  group_by(CFG,Fiscal_Qtr) %>%
+  summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) -> temp_qtr
+
+HDD_data %>% 
+  group_by(CFG,Fiscal_Mo) %>%
+  summarise(CFG_Fiscal_Mo_QTY=sum(PART_QTY)) -> temp_mo
+
+HDD_data %>% 
+  group_by(CFG,Fiscal_Wk) %>%
+  summarise(CFG_Fiscal_Wk_QTY=sum(PART_QTY))  -> temp_wk
+
+CFGgroups <- levels(factor(temp_qtr$CFG))
+len <- length(CFGgroups)
+
+max(temp_qtr$CFG_Fiscal_Qtr_QTY)
+
+for (i in 1:len){
+  
+  if (1){
+    # HDD Weekly Sales
+    temp_data <- filter(temp_wk,CFG==CFGgroups[i])
+    p_week<- temp_data %>%
+      ggplot(aes(x=Fiscal_Wk,y=CFG_Fiscal_Wk_QTY,group=1)) +
+      geom_point(size = 2) +
+      geom_line(size = 1.5) +
+      labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
+      theme_minimal(base_size = 14) + 
+      scale_color_tableau('tableau10medium') + 
+      scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+    print(p_week)
+    #dev.off()
+    ggsave(filename = paste(CFGgroups[i],'HDD_Wk_Sales',".png"), p_week, width=10)
+  }
+  
+  if (1){
+    # HDD Monthly Sales
+    temp_data <- filter(temp_mo,CFG==CFGgroups[i])
+    p_month <- temp_data %>%
+      ggplot(aes(x=Fiscal_Mo,y=CFG_Fiscal_Mo_QTY,group=1)) +
+      geom_point(size = 2) +
+      geom_line(size = 1.5) +
+      labs(title = paste(CFGgroups[i],'HDD Monthly Sales'), x = "Fiscal Month", y = "Part Quantity") + 
+      theme_minimal(base_size = 14) + 
+      scale_color_tableau('tableau10medium') + 
+      scale_x_discrete(breaks = c('FY17M04','FY18M01', 'FY19M01')) +
+      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+      geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
+    print(p_month)
+    #dev.off()
+    ggsave(filename = paste(CFGgroups[i],'HDD_Mo_Sales',".png"), p_month, width=10)
+  }
+  
+  if (1){
+    # HDD Quarterly Sales
+    temp_data <- filter(temp_qtr,CFG==CFGgroups[i])
+    p_quarter <- temp_data %>%
+      ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=1)) +
+      geom_point(size = 2) +
+      geom_line(size = 1.5) +
+      #geom_bar(stat = 'identity') +
+      labs(title = paste(CFGgroups[i],'HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
+      theme_minimal(base_size = 14) + 
+      scale_color_tableau('tableau10medium') + 
+      theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
+      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+    print(p_quarter)
+    #dev.off()
+    ggsave(filename = paste(CFGgroups[i],'HDD_Qtr_Sales',".png"), p_quarter, width=10)
+  }
+}
+```
+
