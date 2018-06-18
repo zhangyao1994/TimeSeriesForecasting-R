@@ -1,0 +1,52 @@
+---
+title: "HigherLevelClusters"
+author: "Yao"
+date: "June 15, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(scales)
+library(ggthemes)
+library(ggrepel)
+library(dtw)
+options(scipen = 999)
+```
+
+## Higher Level Clusters than CFG Explorary
+
+```{r load data}
+# HDD data from IRIS
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+
+# CFG information
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
+```
+
+
+```{r Data Table Join}
+# Weekly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Weekly
+
+# Monthly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Mo) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Monthly
+
+# Quarterly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Qtr) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Quarterly
+
+```
+
+```{r Time Series Clusters}
+temp <- spread(select(HDD_Weekly,CFG,Fiscal_Wk,HDD_QTY),Fiscal_Wk,HDD_QTY)
+dist(temp[,2:ncol(temp)])
+```
+
