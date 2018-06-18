@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(scales)
 library(ggthemes)
+library(plotly)
 options(scipen = 999)
 
 # !diagnostics off
@@ -41,6 +42,17 @@ rm(hdd_qty)
 HDD_data %>% 
   group_by(CFG,Fiscal_Qtr) %>%
   summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) -> temp_qtr
+
+AllCFG_Qtr <- temp_qtr %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFG)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 12) + 
+  #scale_color_tableau('tableau10medium') + 
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+# ggplotly(AllCFG_Qtr)# http://localhost:15618/session/viewhtml2648289c24ca/index.html
 
 HDD_data %>% 
   group_by(CFG,Fiscal_Mo) %>%
