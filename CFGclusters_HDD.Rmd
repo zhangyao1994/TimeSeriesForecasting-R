@@ -49,7 +49,37 @@ AllCFG_Qtr.scaled <- HDD.scaled %>%
 ```
 
 ```{r kmeans cluster}
+data.frame(CFG=unique(temp_qtr$CFG),HDD.data.scaled) %>% na.omit() -> HDD.clean
+HDD.clean %>% select(starts_with("FY")) %>% kmeans(centers=4, nstart=10) -> km
 
+HDD_clustered <- data.frame(HDD.clean, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+
+AllCFG_Qtr.scaled <- HDD_clustered %>% 
+  ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFGcluster)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 12) + 
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~CFGcluster)
+AllCFG_Qtr.scaled
+```
+
+```{r Dertermine k=4}
+HDD_numeric <- HDD.clean %>% select(starts_with("FY")) # make a data table with only the numeric measurements from iris
+# calculate the weighted sum squares (wss) for a single cluster
+wss <- (nrow(HDD_numeric)-1)*sum(apply(HDD_numeric, 2, var))
+# now calculate the weighted sum squares for all cluster numbers from 2 to 15
+for (i in 2:15) wss[i] <- sum(kmeans(HDD_numeric,
+                                       nstart=10,
+                                       centers=i)$withinss)
+# turn wss data into a data frame for plotting
+wss_data <- data.frame(centers=1:15, wss)
+# make plot
+ggplot(wss_data, aes(x=centers, y=wss)) + geom_point() + geom_line() +
+  xlab("Number of Clusters") + ylab("Within groups sum of squares")
 ```
 
 
