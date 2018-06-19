@@ -1,11 +1,11 @@
 ---
-title: "IRIS HDD Data Exploratory Analytics for each CFG"
+title: "IRIS HDD Data Exploratory Analytics: CFG Clusters"
 author: "Yao"
 date: "June 18, 2018"
 output: html_document
 ---
 
-Latest update: 6/18/2018
+Latest update: 6/19/2018
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -16,63 +16,71 @@ library(plotly)
 options(scipen = 999)
 ```
 
-## Clean HDD Demand Data Explorary Analytics
-
-I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
-```{r load the data}
+```{r load the IRIS HDD Sales Data}
 load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+
+# rm(list=setdiff(ls(),"hdd_qty"))
 ```
 
 ```{r CFG level exploration, echo=TRUE}
+# Quarterly Sales for each CFG
 hdd_qty %>% 
   group_by(CFG,Fiscal_Qtr) %>%
   summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) -> temp_qtr
 
 temp_qtr$CFG <- as.factor(temp_qtr$CFG)
 
-HDD.data <- temp_qtr %>% spread(Fiscal_Qtr,CFG_Fiscal_Qtr_QTY) %>% data.frame()
+temp_CFG <- temp_qtr %>% spread(Fiscal_Qtr,CFG_Fiscal_Qtr_QTY) %>% t() 
 
-HDD.data %>% select(starts_with("FY")) %>% scale() %>% data.frame() -> HDD.data.scaled
+HDD.data <- temp_CFG %>% tail(n=nrow(temp_CFG)-1) %>% data.frame()
 
-HDD.scaled <- data.frame(CFG=unique(temp_qtr$CFG),HDD.data.scaled) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+HDD.data.numeric <- lapply(HDD.data,function(x) as.numeric(as.character(x))) %>% data.frame()
 
-AllCFG_Qtr.scaled <- HDD.scaled %>% 
+HDD.data.scaled <- HDD.data.numeric %>% scale() %>% data.frame()
+
+HDD.scaled <- rbind(temp_CFG[1,],HDD.data.scaled) %>% t() %>% data.frame()
+
+dimnames(HDD.scaled)[[2]] <- c('CFG',temp_qtr$Fiscal_Qtr[1:10])
+
+HDD.scaled.plot <- HDD.scaled %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+
+AllCFG_Qtr.scaled <- HDD.scaled.plot %>% 
   ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFG)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
   theme_minimal(base_size = 12) + 
   #scale_color_tableau('tableau10medium') + 
-  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0)
-# ggplotly(AllCFG_Qtr.scaled)# http://localhost:15618/session/viewhtml26488f61a3d/index.html
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))
+# ggplotly(AllCFG_Qtr.scaled) 
+# http://localhost:15618/session/viewhtml26488f61a3d/index.html # scaled by Quarter
+# http://localhost:15618/session/viewhtml26484637683c/index.html # scaled by CFG
 ```
 
 ```{r kmeans cluster}
-data.frame(CFG=unique(temp_qtr$CFG),HDD.data.scaled) %>% na.omit() -> HDD.clean
-HDD.clean %>% select(starts_with("FY")) %>% kmeans(centers=4, nstart=10) -> km
+HDD.scaled %>% na.omit() -> HDD.clean
+HDD.clean.numeric <- HDD.clean %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() 
+HDD.clean.numeric %>% kmeans(centers=4, nstart=10) -> km
 
-HDD_clustered <- data.frame(HDD.clean, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+HDD_clustered <- data.frame(CFG=HDD.clean$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
-AllCFG_Qtr.scaled <- HDD_clustered %>% 
+AllCFG_Qtr.scaled <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
   ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFGcluster)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
   labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
-  theme_minimal(base_size = 12) + 
+  theme_minimal(base_size = 11) + 
   scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
   facet_wrap(~CFGcluster)
-AllCFG_Qtr.scaled
+ggplotly(AllCFG_Qtr.scaled)
 ```
 
 ```{r Dertermine k=4}
-HDD_numeric <- HDD.clean %>% select(starts_with("FY")) # make a data table with only the numeric measurements from iris
-# calculate the weighted sum squares (wss) for a single cluster
-wss <- (nrow(HDD_numeric)-1)*sum(apply(HDD_numeric, 2, var))
+wss <- (nrow(HDD.clean.numeric)-1)*sum(apply(HDD.clean.numeric, 2, var))
 # now calculate the weighted sum squares for all cluster numbers from 2 to 15
-for (i in 2:15) wss[i] <- sum(kmeans(HDD_numeric,
+for (i in 2:15) wss[i] <- sum(kmeans(HDD.clean.numeric,
                                        nstart=10,
                                        centers=i)$withinss)
 # turn wss data into a data frame for plotting
@@ -81,5 +89,10 @@ wss_data <- data.frame(centers=1:15, wss)
 ggplot(wss_data, aes(x=centers, y=wss)) + geom_point() + geom_line() +
   xlab("Number of Clusters") + ylab("Within groups sum of squares")
 ```
+
+```{r Plot the clustered raw data}
+
+```
+
 
 
