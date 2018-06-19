@@ -13,6 +13,7 @@ library(tidyverse)
 library(scales)
 library(ggthemes)
 library(plotly)
+library(reshape2)
 options(scipen = 999)
 ```
 
