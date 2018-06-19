@@ -77,7 +77,8 @@ AllCFG_Qtr.clusted <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
 ggplotly(AllCFG_Qtr.clusted)
 ```
 
-```{r Dertermine k=4}
+```{r Dertermine k value}
+#
 wss <- (nrow(HDD.clean.numeric)-1)*sum(apply(HDD.clean.numeric, 2, var))
 # now calculate the weighted sum squares for all cluster numbers from 2 to 15
 for (i in 2:15) wss[i] <- sum(kmeans(HDD.clean.numeric,
@@ -129,49 +130,71 @@ I want to check the attributes of different clusters and see what findings I wou
 # CFG information
 CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
 
-HDD_clustered %>% select(CFG,CFGcluster) %>% left_join(CFG.info) -> CFG.cluster.joined
+HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
 
 # Interface
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface,fill=Interface)) + geom_bar(stat = "identity") +
-  labs(title = 'Interface Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface") + 
-  theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~Interface)
+CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
+  dcast(CFGcluster~Interface, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface)),'NA')) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'Interface Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface",fill="Interface") + 
+  theme_minimal(base_size = 14)
 
 # Interface Speed
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface_Speed,fill=Interface_Speed)) + geom_bar(stat = "identity") +
-  labs(title = 'Interface_Speed Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface_Speed") + 
+CFG.cluster.joined %>% select(CFGcluster,Interface_Speed) %>% 
+  dcast(CFGcluster~Interface_Speed, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_Speed)),'NA')) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'Interface Speed Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Count", fill='Interface Speed') + 
   theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~Interface_Speed)
+  scale_fill_tableau('tableau10medium')
 
 # Interface All
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface_All,fill=Interface_All)) + geom_bar(stat = "identity") +
-  labs(title = 'Interface_All Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface_All") + 
+CFG.cluster.joined %>% select(CFGcluster,Interface_All) %>% 
+  dcast(CFGcluster~Interface_All, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_All)),'NA')) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'Interface All Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Count", fill='Interface All') + 
   theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~Interface_All)
+  scale_fill_tableau('tableau10medium')
 
 # Capacity
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Capacity,fill=factor(Capacity))) + geom_bar(stat = "identity") +
-  labs(title = 'Capacity Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Capacity") + 
-  theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~Capacity)
+CFG.cluster.joined %>% select(CFGcluster,Capacity) %>% 
+  dcast(CFGcluster~Capacity, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = levels(factor(CFG.cluster.joined$Capacity))) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'Capacity Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Count", fill='Capacity') + 
+  theme_minimal(base_size = 14)
 
 # RPM
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=RPM,fill=factor(RPM))) + geom_bar(stat = "identity") +
-  labs(title = 'RPM Comparison of Different CFG Clusters', x = "CFG Clusters", y = "RPM") + 
+CFG.cluster.joined %>% select(CFGcluster,RPM) %>% 
+  dcast(CFGcluster~RPM, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$RPM)),'NA')) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'RPM Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Count", fill='RPM') + 
   theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~RPM)
+  scale_fill_tableau('tableau10medium')
 
 # Form Factor
-CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Form_Factor,fill=factor(Form_Factor))) + geom_col(stat = "identity") +
-  labs(title = 'Form_Factor Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Form_Factor") + 
+CFG.cluster.joined %>% select(CFGcluster,Form_Factor) %>% 
+  dcast(CFGcluster~Form_Factor, fun.aggregate = length) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Form_Factor)),'NA')) %>%
+  ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = 'Form Factor Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Count", fill='Form Factor') + 
   theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') +
-  facet_wrap(~Form_Factor)
+  scale_fill_tableau('tableau10medium')
 ```
 
 Will it be helpful if I add attributes to cluster CFGs?
