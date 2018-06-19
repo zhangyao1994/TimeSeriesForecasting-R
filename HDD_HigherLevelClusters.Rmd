@@ -43,6 +43,7 @@ hdd_qty %>% group_by(CFG, Fiscal_Qtr) %>%
   left_join(CFG.info) -> CFG.names.joined -> HDD_Quarterly
 
 ```
+
 ```{r By Interface}
 HDD_Weekly %>% group_by(Fiscal_Wk,Interface) %>%
   summarise(Fiscal_Wk_QTY=sum(HDD_QTY)) %>%

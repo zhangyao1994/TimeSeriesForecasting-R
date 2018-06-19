@@ -64,7 +64,7 @@ HDD.clean.numeric %>% kmeans(centers=4, nstart=10) -> km
 
 HDD_clustered <- data.frame(CFG=HDD.clean$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
-AllCFG_Qtr.scaled <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
+AllCFG_Qtr.clusted <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
   ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFGcluster)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -74,7 +74,7 @@ AllCFG_Qtr.scaled <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
   facet_wrap(~CFGcluster)
-ggplotly(AllCFG_Qtr.scaled)
+ggplotly(AllCFG_Qtr.clusted)
 ```
 
 ```{r Dertermine k=4}
@@ -108,7 +108,7 @@ HDD.clean.numeric <- HDD.clean %>% select(starts_with("FY")) %>% lapply(function
 
 HDD_clustered <- data.frame(CFG=HDD.clean$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
-AllCFG_Qtr.scaled <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
+AllCFG_Qtr.raw <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
   ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFGcluster)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -118,7 +118,64 @@ AllCFG_Qtr.scaled <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
   facet_wrap(~CFGcluster)
-ggplotly(AllCFG_Qtr.scaled)
+ggplotly(AllCFG_Qtr.raw)
+
+```
+
+I want to check the attributes of different clusters and see what findings I would have.
+```{r}
+# join the CFG attribute table
+
+# CFG information
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
+
+HDD_clustered %>% select(CFG,CFGcluster) %>% left_join(CFG.info) -> CFG.cluster.joined
+
+# Interface
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface,fill=Interface)) + geom_bar(stat = "identity") +
+  labs(title = 'Interface Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~Interface)
+
+# Interface Speed
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface_Speed,fill=Interface_Speed)) + geom_bar(stat = "identity") +
+  labs(title = 'Interface_Speed Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface_Speed") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~Interface_Speed)
+
+# Interface All
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Interface_All,fill=Interface_All)) + geom_bar(stat = "identity") +
+  labs(title = 'Interface_All Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Interface_All") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~Interface_All)
+
+# Capacity
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Capacity,fill=factor(Capacity))) + geom_bar(stat = "identity") +
+  labs(title = 'Capacity Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Capacity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~Capacity)
+
+# RPM
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=RPM,fill=factor(RPM))) + geom_bar(stat = "identity") +
+  labs(title = 'RPM Comparison of Different CFG Clusters', x = "CFG Clusters", y = "RPM") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~RPM)
+
+# Form Factor
+CFG.cluster.joined %>% ggplot(aes(x=CFGcluster,y=Form_Factor,fill=factor(Form_Factor))) + geom_col(stat = "identity") +
+  labs(title = 'Form_Factor Comparison of Different CFG Clusters', x = "CFG Clusters", y = "Form_Factor") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') +
+  facet_wrap(~Form_Factor)
+```
+
+Will it be helpful if I add attributes to cluster CFGs?
+```{r}
 
 ```
 
