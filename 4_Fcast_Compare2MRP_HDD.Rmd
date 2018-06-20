@@ -1,17 +1,19 @@
 ---
-title: "HDD Fcast Evaluatin"
+title: "HDD Forecast Results Evaluation"
 author: "Yao"
 date: "June 8-14, 2018"
 output: html_document
 ---
 
+Updated on 06/20/2018
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
 library(lubridate)
 library(tidyquant)
+library(plotly)
 
 library(scales) # for percent
 
@@ -82,13 +84,14 @@ CFG_fcast <- na.omit(CFG_fcast) %>%
   # calculate absolute percent error for Xgboost
   mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
 
-results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','scales')) %dopar% {
+l <- htmltools::tagList()
+for (i in 1:len) {
   # For each CFG
   # HDD Weekly Sales
   temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
   
   if (nrow(temp_data)>0) {
-    if (0){
+    if (1){
       p_week<- temp_data %>%
         ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
         geom_point(size = 2) +
@@ -98,8 +101,21 @@ results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','
         scale_color_tableau('tableau10medium') + 
         scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
         scale_y_continuous(label=comma) + expand_limits(y = 0)
-      ggsave(filename = paste(CFGgroups[i],' HDD Weekly Sales',".png",sep = ''), p_week, width=10)
+      l[[i]] <- ggplotly(p_week,width = 999)
+      #ggsave(filename = paste(CFGgroups[i],' HDD Weekly Sales',".png",sep = ''), p_week, width=10)
     }
+  }
+}
+l
+```
+
+```{r Calculate errors}
+results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse')) %dopar% {
+  # For each CFG
+  # HDD Weekly Sales
+  temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
+  
+  if (nrow(temp_data)>0) {
     
     temp_data <- filter(CFG_fcast,CFG==CFGgroups[i])
     
@@ -209,13 +225,7 @@ ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(MAPE),fill=Models)) + geom_ba
 stopImplicitCluster()
 ```
 
-```{r set up Plotly}
-library(plotly)
-# Sys.setenv("plotly_username"="zhangyao1994")
-# Sys.setenv("plotly_api_key"="HAeq9WWHFDV9mcxbBex9") # Does not work? Try this at home.
-```
-
-```{r Create a chart for visualization}
+```{r Create a chart for visualization, eval=FALSE, include=FALSE}
 i=2
 temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
 
