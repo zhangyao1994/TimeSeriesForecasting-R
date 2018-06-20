@@ -37,7 +37,7 @@ HDD.data <- temp_CFG %>% tail(n=nrow(temp_CFG)-1) %>% data.frame() # Only HDD da
 
 HDD.data.numeric <- lapply(HDD.data,function(x) as.numeric(as.character(x))) %>% data.frame()
 
-HDD.data.scaled <- HDD.data.numeric %>% scale() %>% data.frame() # scaled
+HDD.data.scaled <- HDD.data.numeric # %>% scale() %>% data.frame() # scaled
 
 HDD.scaled <- rbind(temp_CFG[1,],HDD.data.scaled) %>% t() %>% data.frame()
 
