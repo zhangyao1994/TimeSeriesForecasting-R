@@ -1,0 +1,240 @@
+---
+title: "HDD Fcast Evaluatin"
+author: "Yao"
+date: "June 8-14, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## Use MRP to establish forecast accuracy baseline
+
+```{r load the data}
+# MRP
+Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv') 
+# remove '_CFG' for MRP
+Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
+
+# All mine
+setwd("~/Yao_Rdata")
+Fcast_Yao <- readRDS('All_fcast.rds')
+
+# HDD data from IRIS
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+hdd_qty$CFG <- as.factor(hdd_qty$CFG)
+```
+
+```{r Match CFG names}
+# Weekly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly
+
+# Weekly data from MRP
+Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(MRP_Fcast = sum(value)) %>%
+  gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP
+
+# join
+HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
+  full_join(Fcast_Yao) -> CFG_fcast.joined
+```
+
+```{r Visualize HDD_QTY and Forecast MRP}
+CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
+len <- length(CFGgroups)
+
+CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY == 0] <- NA # 0 means no forecast
+
+CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
+CFG_fcast <- na.omit(CFG_fcast) %>% 
+  # calculate absolute percent error for MRP
+  mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Prophet
+  mutate(ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for ARIMA
+  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for TBATS
+  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for lm
+  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for RF
+  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Xgboost
+  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
+
+results <- foreach(i=1:len, .combine=rbind, .packages=c('tidyverse','ggthemes','scales')) %dopar% {
+  # For each CFG
+  # HDD Weekly Sales
+  temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
+  
+  if (nrow(temp_data)>0) {
+    if (0){
+      p_week<- temp_data %>%
+        ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
+        geom_point(size = 2) +
+        geom_line(size = 1.5,alpha=0.6) +
+        labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
+        theme_minimal(base_size = 14) + 
+        scale_color_tableau('tableau10medium') + 
+        scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+        scale_y_continuous(label=comma) + expand_limits(y = 0)
+      ggsave(filename = paste(CFGgroups[i],' HDD Weekly Sales',".png",sep = ''), p_week, width=10)
+    }
+    
+    temp_data <- filter(CFG_fcast,CFG==CFGgroups[i])
+    
+    # MRP
+    # Weekly Error Calculation
+    mape_wk_MRP<- mean(temp_data$ape_MRP,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # Prophet
+    # Weekly Error Calculation
+    mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # ARIMA
+    # Weekly Error Calculation
+    mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # TBATS
+    # Weekly Error Calculation
+    mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk lm
+    # Weekly Error Calculation
+    mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk RF
+    # Weekly Error Calculation
+    mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk Xgboost
+    # Weekly Error Calculation
+    mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
+    # 9-week Error Calculation
+    MAPE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    return(c(CFGgroups[i],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS,mape_wk_lm,MAPE_fcastPeriod_lm,mape_wk_RF,MAPE_fcastPeriod_RF,mape_wk_Xgboost,MAPE_fcastPeriod_Xgboost))
+  }
+  else {
+    return(c(CFGgroups[i],rep(NA,14)))
+  }
+}
+
+dimnames(results)[[2]] <- c('CFG','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
+results <- data.frame(results)
+indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
+results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
+
+# Attainment Rates
+Attainment_Rate_Cal <- function(x) {
+  length(which(x<=20))/sum(!is.na(x))*100
+}
+
+# AttainmentRates <- lapply(results[indx],Attainment_Rate_Cal)
+# print(AttainmentRates)
+# 
+# # MAPE
+# MAPE <- lapply(results[indx],mean, na.rm = TRUE)
+# MAPE_median <- lapply(results[indx],median, na.rm = TRUE)
+# print(MAPE)
+# print(MAPE_median)
+
+# only considering the same CFGs
+results.clean <- na.omit(results)
+AttainmentRates <- lapply(results.clean[indx],Attainment_Rate_Cal)
+
+# MAPE
+MAPE <- lapply(results.clean[indx],mean, na.rm = TRUE)
+MAPE_median <- lapply(results.clean[indx],median, na.rm = TRUE)
+
+# combine
+Eval.resuls <- rbind(AttainmentRates,MAPE,MAPE_median)
+Eval.resuls_fcastRegion <- data.frame(Eval.resuls[,seq(2,14,2)])
+dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+
+Eval.resuls_wk <- data.frame(Eval.resuls[,seq(1,14,2)])
+dimnames(Eval.resuls_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+```
+
+```{r Visualize Errors}
+ErrorResults4plot <- data.frame(t(Eval.resuls_fcastRegion))
+
+ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+
+ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(AttainmentRates),fill=Models)) + geom_bar(stat = "identity") +
+  labs(title = 'Model Comparison by Attainment Rates', x = "Models", y = "Attainment Rates (%)") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium')
+
+ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(MAPE),fill=Models)) + geom_bar(stat = "identity") +
+  labs(title = 'Model Comparison by MAPE', x = "Models", y = "MAPE (%)") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium')
+```
+
+```{r close the cluster}
+# for Parallel package
+stopImplicitCluster()
+```
+
+```{r set up Plotly}
+library(plotly)
+# Sys.setenv("plotly_username"="zhangyao1994")
+# Sys.setenv("plotly_api_key"="HAeq9WWHFDV9mcxbBex9") # Does not work? Try this at home.
+```
+
+```{r Create a chart for visualization}
+i=2
+temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i])# for certain CFG
+
+p <- temp_data %>%
+  ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = paste(CFGgroups[i],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+
+ggplotly(p)
+
+# Create a shareable link to your chart
+# Set up API credentials: https://plot.ly/r/getting-started
+# chart_link <- api_create(p, filename="one CFG Example")
+# chart_link
+
+```
+
