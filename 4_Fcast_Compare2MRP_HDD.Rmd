@@ -65,6 +65,9 @@ HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>%
 CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
 len <- length(CFGgroups)
 
+Region.groups <- levels(factor(hdd_qty$RGN_DESC))
+Model.groups <- levels(factor(CFG_fcast.joined$Model))
+
 CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY == 0] <- NA # 0 means no forecast
 
 CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
