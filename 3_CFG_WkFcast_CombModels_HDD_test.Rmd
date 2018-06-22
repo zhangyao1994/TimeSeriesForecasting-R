@@ -53,7 +53,7 @@ registerDoParallel(no_cores)
 load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
 
 # Weekly data
-hdd_qty %>% group_by(CFG, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+hdd_qty %>% group_by(CFG,Fiscal_Wk_End_Date,Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
 ```
 
@@ -67,7 +67,7 @@ myforecast <- function(temp_data){
   test <- df %>% filter(ds >= '2018-03-23')
   
   WeekAhead <- 0  # no time ahead
-  forecastPeriodLen <- 24 + WeekAhead
+  forecastPeriodLen <- 24 + WeekAhead # predict the next half year if possible
   
   if (nrow(test)<1 | nrow(train)<2){
     return(c(CFGgroups[i_CFG],rep(NA,forecastPeriodLen+1)))
@@ -117,7 +117,7 @@ myforecast <- function(temp_data){
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  AvailableWeek <- 11
+  AvailableWeek <- 12 # Remember to update this if the IRIS data is updated
   lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
@@ -145,17 +145,12 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-Regions <- levels(factor(HDD_Weekly$RGN_DESC))
-num.Regions <- length(Regions)
-
-for (i_Region in 1:num.Regions){
   Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
     # Forecast for each CFG
-    temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG],RGN_DESC==Regions[i_Region])
+    temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
     oneCFG_fcast <- myforecast(temp_data)
     oneCFG_fcast
   }
-}
 
 ## by week
 #weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
