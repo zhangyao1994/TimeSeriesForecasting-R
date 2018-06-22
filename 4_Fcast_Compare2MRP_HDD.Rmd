@@ -226,6 +226,7 @@ ErrorResults4plot %>% ggplot(aes(x=Models,y=unlist(MAPE),fill=Models)) + geom_ba
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
+saveRDS(CFG_fcast.joined,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
 ```
 
 ```{r Create a chart for visualization, eval=FALSE, include=FALSE}
