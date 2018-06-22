@@ -1,13 +1,12 @@
 ---
-title: "IRIS HDD Forecasting for each CFG using Weekly Data"
+title: "IRIS HDD Forecasting for each CFG by Region"
 author: "Yao"
 date: "June 12-13, 2018"
 output: html_document
 ---
 
-This is the parallel function version using different models, including TBATS, Prophet, ARIMA, lm, and Random Forest.
-Forecast half a year of FY19 
-and then compare my forecasting All_fcast to MRP.
+This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand, and then compare my forecasting All_fcast to MRP.
+Update on 6/22/2018.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
