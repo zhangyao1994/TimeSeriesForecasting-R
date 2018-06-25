@@ -53,7 +53,7 @@ registerDoParallel(no_cores)
 load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
 
 # Weekly data
-hdd_qty %>% group_by(CFG,Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+hdd_qty %>% group_by(CFG, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
 ```
 
@@ -67,10 +67,10 @@ myforecast <- function(temp_data){
   test <- df %>% filter(ds >= '2018-03-23')
   
   WeekAhead <- 0  # no time ahead
-  forecastPeriodLen <- 24 + WeekAhead # predict the next half year if possible
+  forecastPeriodLen <- 24 + WeekAhead
   
   if (nrow(test)<1 | nrow(train)<2){
-    return(c(CFGgroups[i_CFG],rep(NA,forecastPeriodLen+1)))
+    return(c(CFGgroups[i_CFG],Regions[i_Region],rep(NA,forecastPeriodLen+1)))
   }
   
   # Add time series signature
@@ -82,22 +82,22 @@ myforecast <- function(temp_data){
   # TBATS
   fit <- tbats(HDD.ts)
   fcast <- forecast(fit,h=forecastPeriodLen)
-  TBATS_fcast <- c(CFGgroups[i_CFG],'TBATS',fcast$mean)
+  TBATS_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'TBATS',fcast$mean)
   
   # ARIMA
-  if (i_CFG %in% c(11,55,87,94)){
-    ARIMA_fcast <- (c(CFGgroups[i_CFG],'ARIMA',rep(NA,forecastPeriodLen)))
+  if (i_CFG %in% c(16,17,40,55,87) & i_Region==3){
+    ARIMA_fcast <- (c(CFGgroups[i_CFG],Regions[i_Region],'ARIMA',rep(NA,forecastPeriodLen)))
   } else {
     fit <- auto.arima(HDD.ts) # Some might fail
     fcast <- forecast(fit,h=forecastPeriodLen)
-    ARIMA_fcast <- c(CFGgroups[i_CFG],'ARIMA',fcast$mean)
+    ARIMA_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'ARIMA',fcast$mean)
   }
   
   # Prophet
   m <- prophet(train)
   future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
   fcast <- predict(m, future)
-  Prophet_fcast <- c(CFGgroups[i_CFG],'Prophet',fcast$yhat)
+  Prophet_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'Prophet',fcast$yhat)
   
   # lm
   # Add time series signature
@@ -117,14 +117,14 @@ myforecast <- function(temp_data){
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  AvailableWeek <- 12 # Remember to update this if the IRIS data is updated
-  lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  AvailableWeek <- 12
+  lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
   # Model using the augmented features
   fit <- randomForest(y ~ ., data = na.omit(temp))
   yhat_test <- predict(fit, newdata = test_augmented)
-  RF_fcast <- c(CFGgroups[i_CFG],'timetk_RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  RF_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Xgboost
   # Train the xgboost model using the "xgboost" function
@@ -133,7 +133,7 @@ myforecast <- function(temp_data){
   # Make the predictions on the test data
   temp_test <- test_augmented[,colnames(temp)]
   preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-  Xgboost_fcast <- c(CFGgroups[i_CFG],'timetk_Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast))
 }
@@ -145,23 +145,27 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-  Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+Regions <- levels(factor(HDD_Weekly$RGN_DESC))
+num.Regions <- length(Regions)
+
+Comb_fcast <- data.frame()
+for (i_Region in 1:num.Regions){
+  Comb_fcast0 <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
     # Forecast for each CFG
-    temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+    temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG],RGN_DESC==Regions[i_Region])
     oneCFG_fcast <- myforecast(temp_data)
     oneCFG_fcast
   }
+  Comb_fcast <- rbind(Comb_fcast,Comb_fcast0)
+}
 
-## by week
-#weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
+# Assign Colume names
 weekNames <- c(sprintf("FY19W0%d", 7:9),sprintf("FY19W%d", 10:30))
+dimnames(Comb_fcast)[[2]] <- c('CFG','Region','Model',as.character(weekNames))
+# HDD quntatity should be numeric.
+Comb_fcast[,4:ncol(Comb_fcast)] <- lapply(Comb_fcast[,4:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
 
-dimnames(Comb_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
-Comb_fcast <- data.frame(Comb_fcast)
-Comb_fcast[,3:ncol(Comb_fcast)] <- lapply(Comb_fcast[,3:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
-
-num_CFG_valid <- nrow(Comb_fcast)/6 # The total number of CFGs were forecasted.
-
+# Transformation
 Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
 
 # For plot, do not delete the NA for now.
