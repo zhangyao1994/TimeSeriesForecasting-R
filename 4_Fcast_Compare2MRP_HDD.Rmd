@@ -1,11 +1,11 @@
 ---
-title: "HDD Forecast Results Evaluation"
+title: "HDD Forecast Results Evaluation by Region"
 author: "Yao"
 date: "June 8-14, 2018"
 output: html_document
 ---
 
-Updated on 06/20/2018
+Updated on 06/26/2018
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
@@ -22,13 +22,13 @@ library(iterators)
 library(parallel)
 library(foreach)
 library(doParallel)
- 
+
 # Calculate the number of cores
 no_cores <- detectCores() - 1
 registerDoParallel(no_cores)
 ```
 
-## Use MRP to establish forecast accuracy baseline
+## My models compared to MRP
 
 ```{r load the data}
 # MRP
@@ -52,6 +52,7 @@ hdd_qty$Region <- as.factor(hdd_qty$RGN_DESC)
 Fcast_MRP.Americas <- filter(Fcast_MRP,Region=='AMF')
 Fcast_MRP.Americas$Region <- as.factor('Americas')
 Fcast_MRP <- rbind(Fcast_MRP.Americas,filter(Fcast_MRP,Region=='APJ'|Region=='EMEA'))
+rm(Fcast_MRP.Americas)
 ```
 
 ```{r Match CFG names}
@@ -68,6 +69,7 @@ Fcast_MRP %>% group_by(CFG, Region, Fiscal_Wk) %>%
 # join
 HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
   full_join(Fcast_Yao) -> CFG_fcast.joined
+rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
 ```
 
 ```{r Visualize HDD_QTY and Forecast MRP}
@@ -118,7 +120,7 @@ for (i_CFG in 1:len_CFG) {
           scale_color_tableau('tableau10medium') + 
           scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
           scale_y_continuous(label=comma) + expand_limits(y = 0)
-        l_ggplotly[[i_CFG]] <- ggplotly(p_week,width = 999)
+        l_ggplotly[[(i_CFG-1)*len_Region+i_Region]] <- ggplotly(p_week,width = 999)
         #ggsave(filename = paste(CFGgroups[i],' HDD Weekly Sales',".png",sep = ''), p_week, width=10)
       }
     }
@@ -129,8 +131,8 @@ l_ggplotly
 
 ```{r Calculate errors}
 # Get all CFG names, all Region names, and all Model names
-CFGgroups <- levels(factor(CFG_fcast$CFG))
-len_CFG <- length(CFGgroups)
+CFGgroups2 <- levels(factor(CFG_fcast$CFG))
+len_CFG <- length(CFGgroups2)
 Region.groups <- levels(factor(CFG_fcast$Region))
 len_Region <- length(Region.groups)
 Model.groups <- levels(factor(CFG_fcast$Model))
@@ -140,61 +142,61 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
   # For each Region
   OneCFG <- list()
   for (i_Region in 1:len_Region){
-    temp_data <- filter(CFG_fcast,CFG==CFGgroups[i_CFG],Region==Region.groups[i_Region])
-    print(paste(CFGgroups[i_CFG],Region.groups[i_Region],'PASSED!'))
+    temp_data <- filter(CFG_fcast,CFG==CFGgroups2[i_CFG],Region==Region.groups[i_Region])
+    print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
     
     # MRP
     # Weekly Error Calculation
     mape_wk_MRP<- mean(temp_data$ape_MRP,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # Prophet
     # Weekly Error Calculation
     mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # ARIMA
     # Weekly Error Calculation
     mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # TBATS
     # Weekly Error Calculation
     mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk lm
     # Weekly Error Calculation
     mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk RF
     # Weekly Error Calculation
     mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk Xgboost
     # Weekly Error Calculation
     mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
     # 12-week Error Calculation
-    MAPE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    OneRow <- c(CFGgroups[i_CFG],Region.groups[i_Region],mape_wk_MRP,MAPE_fcastPeriod_MRP,mape_wk_Prophet,MAPE_fcastPeriod_Prophet,mape_wk_ARIMA,MAPE_fcastPeriod_ARIMA,mape_wk_TBATS,MAPE_fcastPeriod_TBATS,mape_wk_lm,MAPE_fcastPeriod_lm,mape_wk_RF,MAPE_fcastPeriod_RF,mape_wk_Xgboost,MAPE_fcastPeriod_Xgboost)
+    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
     OneCFG <- rbind(OneCFG,OneRow)
   }
   return(OneCFG)
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','MAPE_FcastRegion_MRP','MAPE_wk_Prophet','MAPE_FcastRegion_Prophet','MAPE_wk_ARIMA','MAPE_FcastRegion_ARIMA','MAPE_wk_TBATS','MAPE_FcastRegion_TBATS','MAPE_wk_lm','MAPE_FcastRegion_lm','MAPE_wk_RF','MAPE_FcastRegion_RF','MAPE_wk_Xgboost','MAPE_FcastRegion_Xgboost')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 
 # Attainment Rates
@@ -230,27 +232,31 @@ for (i_Region in 1:len_Region){
 Eval.resuls_fcastRegion <- data.frame(Eval.results[,seq(2,14,2)])
 dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
 
-Eval.resuls_wk <- data.frame(Eval.results[,seq(1,14,2)])
-dimnames(Eval.resuls_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
-Eval.resuls_wk <- data.frame(Eval.resuls_wk,Region=Region.groups)
+Eval.results_wk <- data.frame(Eval.results[,seq(1,14,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
+Eval.results_wk[,1:7] <- lapply(Eval.results_wk[,1:7], function(x) as.numeric(as.character(x)))
 ```
 
 ```{r Visualize Errors}
 ErrorResults4plot <- data.frame(t(Eval.resuls_fcastRegion))
 ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
-dimnames(ErrorResults4plot)[[2]] <- c('Attainment_Rates_Americas','Attainment_Rates_APJ','Attainment_Rates_EMEA','MAPE_Americas','MAPE_APJ','MAPE_EMEA','MAPE_median_Americas','MAPE_median_APJ','MAPE_median_EMEA','Models')
-ErrorResults4plot <- data.frame(ErrorResults4plot)
-ResultsNames <- c('Attainment_Rates_Americas','Attainment_Rates_APJ','Attainment_Rates_EMEA','MAPE_Americas','MAPE_APJ','MAPE_EMEA','MAPE_median_Americas','MAPE_median_APJ','MAPE_median_EMEA')
+dimnames(ErrorResults4plot)[[2]] <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA','Models')
+
+ResultsNames <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA')
 len_ResultsNames <- length(ResultsNames) 
 ErrorResults4plot[ResultsNames] <- lapply(ErrorResults4plot[ResultsNames], function(x) as.numeric(as.character(x)))
 
+Errors_ggplotly <- htmltools::tagList()
 for (i in 1:len_ResultsNames){
   p <- ErrorResults4plot %>% ggplot(aes(x=Models),fill=Models) + geom_bar(aes_string(y=ResultsNames[i]),stat = "identity") +
     labs(title = paste('Model Comparison by',ResultsNames[i]), x = "Models", y = paste(ResultsNames[i],"(%)")) + 
     theme_minimal(base_size = 14) + 
     scale_fill_tableau('tableau10medium')
-  ggsave(filename = paste(ResultsNames[i],".png",sep = ''), p, width=10)
+  #ggsave(filename = paste(ResultsNames[i],".png",sep = ''), p, width=10)
+  Errors_ggplotly[[i]] <- ggplotly(p,width = 999)
 }
+Errors_ggplotly
 ```
 
 ```{r close the cluster}
