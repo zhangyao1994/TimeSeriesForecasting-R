@@ -198,6 +198,8 @@ dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','
 results <- data.frame(results)
 indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
+results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
+saveRDS(results,'APEreslts.rds') 
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
@@ -257,12 +259,15 @@ for (i in 1:len_ResultsNames){
   Errors_ggplotly[[i]] <- ggplotly(p,width = 999)
 }
 Errors_ggplotly
+
+rm(data.selected,Eval.results,Eval.resuls_fcastRegion,Eval.results_wk,results,results.clean)
 ```
 
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
 saveRDS(CFG_fcast.joined,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
+saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
 ```
 
 ```{r Create a chart for visualization, eval=FALSE, include=FALSE}
