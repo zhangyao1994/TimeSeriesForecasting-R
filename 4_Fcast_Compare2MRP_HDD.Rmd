@@ -1,7 +1,7 @@
 ---
 title: "HDD Forecast Results Evaluation by Region"
 author: "Yao"
-date: "June 8-14, 2018"
+date: "June 8-27, 2018"
 output: html_document
 ---
 
@@ -110,7 +110,7 @@ for (i_CFG in 1:len_CFG) {
     temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i_CFG],Region==Region.groups[i_Region])
     
     if (nrow(temp_data)>0) {
-      if (1){
+      if (0){
         p_week<- temp_data %>%
           ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
           geom_point(size = 2) +
@@ -188,15 +188,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
+    mape_wk <- as.numeric(OneRow[seq(3,16,2)])
+    APE_fcastPeriod <- as.numeric(OneRow[seq(4,16,2)])
+    OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
     OneCFG <- rbind(OneCFG,OneRow)
   }
   return(OneCFG)
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Mixed','APE_FcastRegion_Mixed')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Mixed','APE_FcastRegion_Mixed')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
 saveRDS(results,'APEreslts.rds') 
@@ -231,18 +234,18 @@ for (i_Region in 1:len_Region){
 }
 #Eval.results <- data.frame(Eval.results,Region=Region.groups)
 
-Eval.resuls_fcastRegion <- data.frame(Eval.results[,seq(2,14,2)])
-dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+Eval.resuls_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
+dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
 
-Eval.results_wk <- data.frame(Eval.results[,seq(1,14,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
 Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
-Eval.results_wk[,1:7] <- lapply(Eval.results_wk[,1:7], function(x) as.numeric(as.character(x)))
+Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
 ```
 
 ```{r Visualize Errors}
 ErrorResults4plot <- data.frame(t(Eval.resuls_fcastRegion))
-ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
 dimnames(ErrorResults4plot)[[2]] <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA','Models')
 
 ResultsNames <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA')
@@ -266,8 +269,8 @@ rm(data.selected,Eval.results,Eval.resuls_fcastRegion,Eval.results_wk,results,re
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
-saveRDS(CFG_fcast.joined,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
-saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
+#saveRDS(CFG_fcast.joined,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
+#saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
 ```
 
 ```{r Create a chart for visualization, eval=FALSE, include=FALSE}
