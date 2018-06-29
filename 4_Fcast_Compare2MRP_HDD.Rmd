@@ -79,7 +79,7 @@ rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
 
 ```{r Load feather data}
 # Load feather data
-path <- "CFG_fcast.feather"
+path <- "~/Yao_Rdata/CFG_fcast.feather"
 # write_feather(CFG_fcast.joined, path)
 CFG_fcast.joined <- read_feather(path)
 ```
@@ -255,12 +255,12 @@ for (i_Region in 1:len_Region){
 
 Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
 dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
-Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
+Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
 Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
 
 Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
 dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
-Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
+Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
 Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
