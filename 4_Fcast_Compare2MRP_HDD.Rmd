@@ -1,11 +1,11 @@
 ---
 title: "HDD Forecast Results Evaluation by Region"
 author: "Yao"
-date: "June 8-27, 2018"
+date: "June 8-29, 2018"
 output: html_document
 ---
 
-Updated on 06/26/2018
+Updated on 06/29/2018
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
@@ -26,11 +26,15 @@ library(doParallel)
 # Calculate the number of cores
 no_cores <- detectCores() - 1
 registerDoParallel(no_cores)
+
+# fast data format
+library(feather)
 ```
 
 ## My models compared to MRP
 
-```{r load the data}
+```{r load the data, eval=FALSE, include=FALSE}
+# This chunk was run once, and then done.
 # MRP
 Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv') 
 # remove '_CFG' for MRP
@@ -55,7 +59,8 @@ Fcast_MRP <- rbind(Fcast_MRP.Americas,filter(Fcast_MRP,Region=='APJ'|Region=='EM
 rm(Fcast_MRP.Americas)
 ```
 
-```{r Match CFG names}
+```{r Match CFG names, eval=FALSE, include=FALSE}
+# This chunk was run once, and then done.
 # Weekly data from IRIS data
 hdd_qty %>% group_by(CFG, Region, Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) %>%
@@ -72,6 +77,14 @@ HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>%
 rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
 ```
 
+```{r Load feather data}
+# Load feather data
+path <- "CFG_fcast.feather"
+# write_feather(CFG_fcast.joined, path)
+CFG_fcast.joined <- read_feather(path)
+```
+
+
 ```{r Visualize HDD_QTY and Forecast MRP}
 # Get all CFG names, all Region names, and all Model names
 CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
@@ -81,25 +94,7 @@ len_Region <- length(Region.groups)
 Model.groups <- levels(factor(CFG_fcast.joined$Model))
 
 # less than 0 means no forecast
-CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY <= 0] <- NA
-
-# Data transformation for error calculations
-CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
-CFG_fcast <- na.omit(CFG_fcast) %>% 
-  # calculate absolute percent error for MRP
-  mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for Prophet
-  mutate(ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for ARIMA
-  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for TBATS
-  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for lm
-  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for RF
-  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for Xgboost
-  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
+# CFG_fcast.joined$HDD_QTY[CFG_fcast.joined$HDD_QTY <= 0] <- NA
 
 l_ggplotly <- htmltools::tagList()
 # For each CFG
@@ -130,6 +125,26 @@ l_ggplotly
 ```
 
 ```{r Calculate errors}
+# Data transformation for error calculations
+CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
+
+# CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
+CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W18") %>%
+  # calculate absolute percent error for MRP
+  mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Prophet
+  mutate(ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for ARIMA
+  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for TBATS
+  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for lm
+  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for RF
+  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for Xgboost
+  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
+
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
 len_CFG <- length(CFGgroups2)
@@ -197,12 +212,15 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Mixed','APE_FcastRegion_Mixed')
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Mixed','APE_FcastRegion_Mixed')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
-saveRDS(results,'APEreslts.rds') 
+
+path <- "~/Yao_Rdata/APE_values.feather"
+write_feather(results, path)
+#APE_values <- read_feather("~/Yao_Rdata/APE_values.feather")
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
@@ -219,7 +237,8 @@ Attainment_Rate_Cal <- function(x) {
 # print(MAPE_median)
 
 # only considering the same CFGs
-results.clean <- na.omit(results)
+# results.clean <- na.omit(results)
+results.clean <- results # consider all CFGs
 
 Eval.results <- list()
 # For different Regions
@@ -234,18 +253,23 @@ for (i_Region in 1:len_Region){
 }
 #Eval.results <- data.frame(Eval.results,Region=Region.groups)
 
-Eval.resuls_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
-dimnames(Eval.resuls_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
+Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
+Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
 
 Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
 Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('AttainmentRates','MAPE','MAPE_median'))
 Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
+
+write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
+write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 ```
 
 ```{r Visualize Errors}
-ErrorResults4plot <- data.frame(t(Eval.resuls_fcastRegion))
-ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mixed')
+ErrorResults4plot <- data.frame(t(Eval.results_fcastRegion))
+ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
 dimnames(ErrorResults4plot)[[2]] <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA','Models')
 
 ResultsNames <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA')
@@ -263,7 +287,7 @@ for (i in 1:len_ResultsNames){
 }
 Errors_ggplotly
 
-rm(data.selected,Eval.results,Eval.resuls_fcastRegion,Eval.results_wk,results,results.clean)
+rm(data.selected,Eval.results,Eval.results_fcastRegion,Eval.results_wk,results,results.clean)
 ```
 
 ```{r close the cluster}
