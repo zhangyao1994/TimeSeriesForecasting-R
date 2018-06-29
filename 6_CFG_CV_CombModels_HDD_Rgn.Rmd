@@ -41,6 +41,8 @@ library(iterators)
 library(parallel)
 library(foreach)
 library(doParallel)
+
+library(feather)
  
 # Calculate the number of cores
 no_cores <- detectCores() - 1
@@ -181,7 +183,8 @@ Comb_fcast[,1:4] <- lapply(Comb_fcast[,1:4], function(x) as.character(x))
 Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',W01:W26) -> All_fcast
 
 # For plot, do not delete the NA for now.
-saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
+# saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_cv.feather")
 ```
 
 ```{r close the clusters}

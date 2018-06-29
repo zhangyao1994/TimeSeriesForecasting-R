@@ -1,0 +1,147 @@
+---
+title: "HDD Forecast Cross-Validation Results Evaluation by Region"
+author: "Yao"
+date: "June 29, 2018"
+output: html_document
+---
+
+Updated on 06/29/2018
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+library(plotly)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+
+# fast data format
+library(feather)
+```
+
+## My models compared to MRP
+
+```{r Load feather data}
+# Load feather data
+path <- "~/Yao_Rdata/All_fcast.feather"
+# write_feather(All_fcast, path)
+All_fcast <- read_feather(path)
+```
+
+Visualization is done in Shiny App.
+
+```{r Calculate errors}
+# Data transformation for error calculations
+All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
+
+# CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
+CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="W13" & Fiscal_Wk<="W26") %>%
+  # calculate absolute percent error for Prophet
+  mutate(ape_Prophet = abs((Truth - Prophet)/Truth * 100)) %>%
+  # calculate absolute percent error for ARIMA
+  mutate(ape_ARIMA = abs((Truth - ARIMA)/Truth * 100)) %>%
+  # calculate absolute percent error for TBATS
+  mutate(ape_TBATS = abs((Truth - TBATS)/Truth * 100)) %>%
+  # calculate absolute percent error for lm
+  mutate(ape_lm = abs((Truth - timetk_lm)/Truth * 100)) %>%
+  # calculate absolute percent error for RF
+  mutate(ape_RF = abs((Truth - timetk_RF)/Truth * 100)) %>%
+  # calculate absolute percent error for Xgboost
+  mutate(ape_Xgboost = abs((Truth - timetk_Xgboost)/Truth * 100))
+
+# Get all CFG names, all Region names, and all Model names
+CFGgroups2 <- levels(factor(CFG_fcast$CFG))
+len_CFG <- length(CFGgroups2)
+Region.groups <- levels(factor(CFG_fcast$Region))
+len_Region <- length(Region.groups)
+Quarter.groups <- levels(factor(CFG_fcast$Quarter))
+len_Quarter <- length(Quarter.groups)
+
+results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %dopar% {
+  # HDD Weekly Sales for certain CFG and selected Region
+  # For each Region
+  OneCFG <- list()
+  for (i_Region in 1:len_Region){
+    for (i_Quarter in 1:len_Quarter){
+      temp_data <- filter(CFG_fcast,CFG==CFGgroups2[i_CFG],Region==Region.groups[i_Region],Quarter==Quarter.groups[i_Quarter])
+      print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'PASSED!'))
+      
+      # Prophet
+      # Weekly Error Calculation
+      mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      # ARIMA
+      # Weekly Error Calculation
+      mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      # TBATS
+      # Weekly Error Calculation
+      mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      # timetk lm
+      # Weekly Error Calculation
+      mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      # timetk RF
+      # Weekly Error Calculation
+      mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      # timetk Xgboost
+      # Weekly Error Calculation
+      mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      
+      OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
+      
+      mape_wk <- as.numeric(OneRow[seq(4,15,2)])
+      APE_fcastPeriod <- as.numeric(OneRow[seq(4,15,2)])
+      #OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
+      OneCFG <- rbind(OneCFG,OneRow)
+      
+    }
+  }
+  return(OneCFG)
+}
+
+
+dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+results <- data.frame(results)
+indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
+results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
+
+path <- "~/Yao_Rdata/APE_values_CV.feather"
+write_feather(results, path)
+#APE_values <- read_feather("~/Yao_Rdata/APE_values.feather")
+```
+
+```{r close the cluster}
+# for Parallel package
+stopImplicitCluster()
+#saveRDS(All_fcast,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
+#saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
+```
+
