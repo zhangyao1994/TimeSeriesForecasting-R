@@ -35,7 +35,7 @@ library(feather)
 
 ```{r Load feather data}
 # Load feather data
-path <- "~/Yao_Rdata/All_fcast.feather"
+path <- "~/Yao_Rdata/All_fcast_cv.feather"
 # write_feather(All_fcast, path)
 All_fcast <- read_feather(path)
 ```
@@ -116,8 +116,8 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       
       OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
       
-      mape_wk <- as.numeric(OneRow[seq(4,15,2)])
-      APE_fcastPeriod <- as.numeric(OneRow[seq(4,15,2)])
+      #mape_wk <- as.numeric(OneRow[seq(4,15,2)])
+      #APE_fcastPeriod <- as.numeric(OneRow[seq(5,15,2)])
       #OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
       OneCFG <- rbind(OneCFG,OneRow)
       
@@ -131,7 +131,7 @@ dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_Fcas
 results <- data.frame(results)
 indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
-results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
+results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region","Quarter" )], function(x) as.character(x))
 
 path <- "~/Yao_Rdata/APE_values_CV.feather"
 write_feather(results, path)
