@@ -1,0 +1,181 @@
+---
+title: "Select Comb Models based on Cross-Validation and Apply to FY19"
+author: "Yao"
+date: "July 3, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
+library(tidyverse)
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+
+# fast data format
+library(feather)
+```
+
+```{r load data, eval=FALSE, include=FALSE}
+# Test on the selected region: FY19W07-FY19W20
+APEresults <- read_feather("~/GitHub/ShinyPractice/Fcast-app/data/APE_values.feather")
+
+# Cross-validation on different quarters
+APEresults_CV <- read_feather('~/GitHub/ShinyPractice/Fcast-app/data/APE_values_CV.feather')
+
+# Prepare the data table for Page 3
+MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
+  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE))
+
+MAPE_CV_week.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
+  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE))
+
+```
+
+```{r Model Selection}
+# Get all CFG names, all Region names, and all Model names
+CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
+Regions <- levels(factor(CFG_fcast.joined$Region))
+Models <- levels(factor(CFG_fcast.joined$Model))
+
+
+
+```
+
+```{r Calculate errors}
+
+results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %dopar% {
+  # HDD Weekly Sales for certain CFG and selected Region
+  # For each Region
+  OneCFG <- list()
+  for (i_Region in 1:len_Region){
+    temp_data <- filter(CFG_fcast,CFG==CFGgroups[i_CFG],Region==Regions[i_Region])
+    print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
+    
+    # MRP
+    # Weekly Error Calculation
+    mape_wk_MRP<- mean(temp_data$ape_MRP,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # Prophet
+    # Weekly Error Calculation
+    mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # ARIMA
+    # Weekly Error Calculation
+    mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # TBATS
+    # Weekly Error Calculation
+    mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk lm
+    # Weekly Error Calculation
+    mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk RF
+    # Weekly Error Calculation
+    mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    # timetk Xgboost
+    # Weekly Error Calculation
+    mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
+    mape_wk <- as.numeric(OneRow[seq(3,16,2)])
+    APE_fcastPeriod <- as.numeric(OneRow[seq(4,16,2)])
+    OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
+    OneCFG <- rbind(OneCFG,OneRow)
+  }
+  return(OneCFG)
+}
+
+
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+results <- data.frame(results)
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
+results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
+
+path <- "~/Yao_Rdata/APE_values.feather"
+write_feather(results, path)
+
+# Attainment Rates
+Attainment_Rate_Cal <- function(x) {
+  length(which(x<=20))/sum(!is.na(x))*100
+}
+
+results.clean <- results # consider all CFGs
+
+Eval.results <- list()
+# For different Regions
+for (i_Region in 1:len_Region){
+  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+  # MAPE
+  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # combine
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+}
+
+Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
+
+Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
+
+write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
+write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
+```
+
+```{r Visualize Errors}
+ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+           select(-Region,-Results,-Comb) %>%
+           gather(key="Model",value="Value") %>%
+           ggplot(aes(Model,Value)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium'))
+
+ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+           select(-Region,-Results,-Comb) %>%
+           gather(key="Model",value="Value") %>%
+           ggplot(aes(Model,Value)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium'))
+
+```
+
+```{r close the cluster}
+# for Parallel package
+stopImplicitCluster()
+```
+
