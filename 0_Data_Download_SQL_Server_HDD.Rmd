@@ -10,10 +10,7 @@ Updated on 6/22/2018.
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(plotly)
-library(scales)
-library(ggthemes)
-library(ggrepel)
+library(feather)
 options(scipen = 999)
 ```
 
@@ -60,7 +57,7 @@ ORDER BY D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
 
 
 ```{r Deal with missing data}
-Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
 
 apply(hdd_qty, 2, function(x) any(is.na(x)))
 
@@ -74,10 +71,7 @@ hdd_qty = hdd_qty %>%
 apply(hdd_qty, 2, function(x) any(is.na(x)))
 # All NAs have been cleaned.
 
-rm(db)
-rm(Weekly_HDD_QTY_combined)
-
-save.image("~/HDD_QTY_IRIS.RData")
+write_feather(hdd_qty,'~/Yao_Rdata/HDD_QTY_IRIS.feather')
 ```
 
 
