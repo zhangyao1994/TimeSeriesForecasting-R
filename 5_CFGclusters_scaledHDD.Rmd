@@ -14,13 +14,12 @@ library(scales)
 library(ggthemes)
 library(plotly)
 library(reshape2)
+library(feather)
 options(scipen = 999)
 ```
 
 ```{r load the IRIS HDD Sales Data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
-
-# rm(list=setdiff(ls(),"hdd_qty"))
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 ```
 
 ```{r CFG level exploration}
