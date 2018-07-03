@@ -1,12 +1,12 @@
 ---
 title: "IRIS HDD Forecasting for each CFG by Region with Cross-Validation"
 author: "Yao"
-date: "June 27, 2018"
+date: "June 27-July 3, 2018"
 output: html_document
 ---
 
 This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand with one quarter ahead and with cross-validation.
-Update on 6/27/2018.
+Update on 7/3/2018. Do not use FY19Q1 to train models.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -52,7 +52,7 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 
 # Weekly data
 hdd_qty %>% group_by(CFG, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk,Fiscal_Qtr) %>%
@@ -67,7 +67,7 @@ myforecast <- function(){
   MultiQtr_Fcast <- list()
   for (i_Qtr in 1:4){
     # Split into training and test sets
-    # i=1: At the beginning of FY18Q1, forecast FY18Q1 and FY18Q2 and only calculate the accuracy of FY18Q2
+    # i=1: At the beginning of FY17Q4, forecast FY18Q1 and FY17Q4 and only calculate the accuracy of FY18Q1
     Fcast_TimePoint <- filter(temp_data,Fiscal_Qtr==Fcast_Qtr[i_Qtr])$date[1]
     Fcast_EndPoint <- filter(temp_data,Fiscal_Qtr==Fcast_Qtr[i_Qtr+2])$date[1]
     train <- df %>% filter(ds < Fcast_TimePoint)
@@ -75,14 +75,16 @@ myforecast <- function(){
     
     WeekAhead <- length(filter(temp_data,Fiscal_Qtr==Fcast_Qtr[i_Qtr])$date)
     forecastPeriodLen <- length(filter(temp_data,Fiscal_Qtr==Fcast_Qtr[i_Qtr+1])$date) + WeekAhead
+    # print(forecastPeriodLen)
     
-    if (nrow(test) !=26 | nrow(train)<2){
-      OneQtrFcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],rep(NA,26+1))
+    Fcast_Wk_num <- 13
+    if (nrow(test) < Fcast_Wk_num | nrow(train)<2){ 
+      OneQtrFcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],rep(NA,Fcast_Wk_num+1))
       MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
       next
     }
     
-    Truth <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'Truth',test$y)
+    Truth <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'Truth',tail(test$y,Fcast_Wk_num))
     
     # Add time series signature # For the last date of train region
     train_augmented <- train[nrow(train),] %>%
@@ -93,22 +95,22 @@ myforecast <- function(){
     # TBATS
     fit <- tbats(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
-    TBATS_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'TBATS',fcast$mean)
+    TBATS_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'TBATS',tail(fcast$mean,Fcast_Wk_num))
     
     # ARIMA
     if (i_CFG %in% c(16,17,40,55,87) & i_Region==3){
-      ARIMA_fcast <- (c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'ARIMA',rep(NA,forecastPeriodLen)))
+      ARIMA_fcast <- (c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'ARIMA',rep(NA,Fcast_Wk_num)))
     } else {
       fit <- auto.arima(HDD.ts) # Some might fail # ,D=1
       fcast <- forecast(fit,h=forecastPeriodLen)
-      ARIMA_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'ARIMA',fcast$mean)
+      ARIMA_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'ARIMA',tail(fcast$mean,Fcast_Wk_num))
     }
     
     # Prophet
     m <- prophet(train)
     future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
     fcast <- predict(m, future)
-    Prophet_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'Prophet',fcast$yhat)
+    Prophet_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'Prophet',tail(fcast$yhat,Fcast_Wk_num))
     
     # lm
     # Add time series signature
@@ -128,13 +130,13 @@ myforecast <- function(){
     test_augmented <- test %>%
       tk_augment_timeseries_signature()
     yhat_test <- predict(fit, newdata = test_augmented)
-    lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'timetk_lm',yhat_test)
+    lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'timetk_lm',tail(yhat_test,Fcast_Wk_num))
     
     # Random Forest
     # Model using the augmented features
     fit <- randomForest(y ~ ., data = na.omit(temp))
     yhat_test <- predict(fit, newdata = test_augmented)
-    RF_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'timetk_RF',yhat_test)
+    RF_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'timetk_RF',tail(yhat_test,Fcast_Wk_num))
     
     # Xgboost
     # Train the xgboost model using the "xgboost" function
@@ -143,7 +145,7 @@ myforecast <- function(){
     # Make the predictions on the test data
     temp_test <- test_augmented[,colnames(temp)]
     preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-    Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr],'timetk_Xgboost',preds)
+    Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'timetk_Xgboost',tail(preds,Fcast_Wk_num))
     
     OneQtrFcast <- rbind(Truth,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast)
     MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
@@ -160,7 +162,7 @@ len <- length(CFGgroups)
 
 Regions <- levels(factor(HDD_Weekly$RGN_DESC))
 num.Regions <- length(Regions)
-Fcast_Qtr <- c("FY18Q1","FY18Q2","FY18Q3","FY18Q4","FY19Q1","FY19Q2")
+Fcast_Qtr <- c("FY17Q4","FY18Q1","FY18Q2","FY18Q3","FY18Q4","FY19Q1","FY19Q2") # This is the time point where you forecast.
 
 Comb_fcast <- data.frame()
 for (i_Region in 1:num.Regions){
@@ -174,17 +176,17 @@ for (i_Region in 1:num.Regions){
 }
 
 # Assign Colume names
-weekNames <- c(sprintf("W0%d", 1:9),sprintf("W%d", 10:26))
+weekNames <- c(sprintf("W0%d", 1:9),sprintf("W%d", 10:13))
 dimnames(Comb_fcast)[[2]] <- c('CFG','Region','Quarter','Model',as.character(weekNames))
 # HDD quntatity should be numeric.
 Comb_fcast[,5:ncol(Comb_fcast)] <- lapply(Comb_fcast[,5:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
 Comb_fcast[,1:4] <- lapply(Comb_fcast[,1:4], function(x) as.character(x))
 # Transformation
-Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',W01:W26) -> All_fcast
+Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',W01:W13) -> All_fcast
 
 # For plot, do not delete the NA for now.
 # saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_cv.feather")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV.feather")
 ```
 
 ```{r close the clusters}
