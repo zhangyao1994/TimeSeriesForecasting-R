@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(scales)
 library(ggthemes)
+library(plotly)
+library(feather)
 options(scipen = 999)
 
 # !diagnostics off
@@ -32,9 +34,7 @@ blank_theme <- theme_minimal()+
 
 I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
 ```{r load the data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
-HDD_data <- hdd_qty
-rm(hdd_qty)
+HDD_data <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS.feather')
 ```
 
 ```{r plot overall HDD_QTY}
@@ -205,7 +205,7 @@ HDD_data %>%
   summarise(Customer_Fiscal_Mo_QTY=sum(PART_QTY)) %>%
   arrange(desc(Customer_Fiscal_Mo_QTY)) %>% head(30)-> temp_data
 
-p_Monthly_Customer <- temp_data %>%
+p_Monthly_Customer <- temp_data %>% arrange(desc(Fiscal_Mo)) %>%
   ggplot(aes(x=Fiscal_Mo,y=Customer_Fiscal_Mo_QTY,group=Customer, colour=Customer)) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
@@ -215,8 +215,7 @@ p_Monthly_Customer <- temp_data %>%
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = '',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,150000))
-p_Monthly_Customer
-# ggplotly(p_Monthly_Customer)
+ggplotly(p_Monthly_Customer)
 
 HDD_data %>% 
   group_by(Customer,Fiscal_Qtr,LOB_DESC) %>%
@@ -267,7 +266,7 @@ p_Quarterly_Customer_LOB <- data4plot %>%
   scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,1500000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,1500000))
 p_Quarterly_Customer_LOB
 ```
 
