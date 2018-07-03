@@ -41,11 +41,10 @@ Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv')
 Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
 
 # All mine
-setwd("~/Yao_Rdata")
-Fcast_Yao <- readRDS('All_fcast.rds')
+Fcast_Yao <- read_feather('~/Yao_Rdata/All_fcast.feather')
 
 # HDD data from IRIS
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 hdd_qty$CFG <- as.factor(hdd_qty$CFG)
 hdd_qty$Region <- as.factor(hdd_qty$RGN_DESC)
 
@@ -75,13 +74,13 @@ Fcast_MRP %>% group_by(CFG, Region, Fiscal_Wk) %>%
 HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
   full_join(Fcast_Yao) -> CFG_fcast.joined
 rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
+
+write_feather(CFG_fcast.joined, "~/Yao_Rdata/CFG_fcast.feather")
 ```
 
 ```{r Load feather data}
 # Load feather data
-path <- "~/Yao_Rdata/CFG_fcast.feather"
-# write_feather(CFG_fcast.joined, path)
-CFG_fcast.joined <- read_feather(path)
+CFG_fcast.joined <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
 ```
 
 
@@ -129,7 +128,7 @@ l_ggplotly
 CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
-CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W18") %>%
+CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   # calculate absolute percent error for MRP
   mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Prophet
@@ -220,24 +219,12 @@ results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) a
 
 path <- "~/Yao_Rdata/APE_values.feather"
 write_feather(results, path)
-#APE_values <- read_feather("~/Yao_Rdata/APE_values.feather")
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
   length(which(x<=20))/sum(!is.na(x))*100
 }
 
-# AttainmentRates <- lapply(results[indx],Attainment_Rate_Cal)
-# print(AttainmentRates)
-# 
-# # MAPE
-# MAPE <- lapply(results[indx],mean, na.rm = TRUE)
-# MAPE_median <- lapply(results[indx],median, na.rm = TRUE)
-# print(MAPE)
-# print(MAPE_median)
-
-# only considering the same CFGs
-# results.clean <- na.omit(results)
 results.clean <- results # consider all CFGs
 
 Eval.results <- list()
@@ -251,7 +238,6 @@ for (i_Region in 1:len_Region){
   # combine
   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
 }
-#Eval.results <- data.frame(Eval.results,Region=Region.groups)
 
 Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
 dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
@@ -268,56 +254,28 @@ write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 ```
 
 ```{r Visualize Errors}
-ErrorResults4plot <- data.frame(t(Eval.results_fcastRegion))
-ErrorResults4plot$Models <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
-dimnames(ErrorResults4plot)[[2]] <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA','Models')
+ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+           select(-Region,-Results,-Comb) %>%
+           gather(key="Model",value="Value") %>%
+           ggplot(aes(Model,Value)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium'))
 
-ResultsNames <- c('Attainment_Rates_Americas','MAPE_Americas','MAPE_median_Americas','Attainment_Rates_APJ','MAPE_APJ','MAPE_median_APJ','Attainment_Rates_EMEA','MAPE_EMEA','MAPE_median_EMEA')
-len_ResultsNames <- length(ResultsNames) 
-ErrorResults4plot[ResultsNames] <- lapply(ErrorResults4plot[ResultsNames], function(x) as.numeric(as.character(x)))
+ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+           select(-Region,-Results,-Comb) %>%
+           gather(key="Model",value="Value") %>%
+           ggplot(aes(Model,Value)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium'))
 
-Errors_ggplotly <- htmltools::tagList()
-for (i in 1:len_ResultsNames){
-  p <- ErrorResults4plot %>% ggplot(aes(x=Models),fill=Models) + geom_bar(aes_string(y=ResultsNames[i]),stat = "identity") +
-    labs(title = paste('Model Comparison by',ResultsNames[i]), x = "Models", y = paste(ResultsNames[i],"(%)")) + 
-    theme_minimal(base_size = 14) + 
-    scale_fill_tableau('tableau10medium')
-  #ggsave(filename = paste(ResultsNames[i],".png",sep = ''), p, width=10)
-  Errors_ggplotly[[i]] <- ggplotly(p,width = 999)
-}
-Errors_ggplotly
-
-rm(data.selected,Eval.results,Eval.results_fcastRegion,Eval.results_wk,results,results.clean)
 ```
 
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
-#saveRDS(CFG_fcast.joined,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
-#saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
-```
-
-```{r Create a chart for visualization, eval=FALSE, include=FALSE}
-i_CFG=2
-i_Region=3
-temp_data <- filter(CFG_fcast.joined,CFG==CFGgroups[i_CFG],Region==Region.groups[i_Region])# for certain CFG and Region
-
-p <- temp_data %>%
-  ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
-  geom_point(size = 2) +
-  geom_line(size = 1.5,alpha=0.6) +
-  labs(title = paste(CFGgroups[i_CFG],Region.groups[i_Region],'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
-  theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') + 
-  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
-  scale_y_continuous(label=comma) + expand_limits(y = 0)
-
-ggplotly(p)
-
-# Create a shareable link to your chart
-# Set up API credentials: https://plot.ly/r/getting-started
-# chart_link <- api_create(p, filename="one CFG Example")
-# chart_link
-
 ```
 
