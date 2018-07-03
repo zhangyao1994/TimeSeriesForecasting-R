@@ -15,13 +15,12 @@ library(ggthemes)
 library(plotly)
 library(reshape2)
 library(imputeTS)
+library(feather)
 options(scipen = 999)
 ```
 
 ```{r load the IRIS HDD Sales Data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
-
-# rm(list=setdiff(ls(),"hdd_qty"))
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 ```
 
 ```{r CFG level exploration}
@@ -154,11 +153,5 @@ CFG.cluster.joined %>% select(CFGcluster,Form_Factor) %>%
   theme_minimal(base_size = 14) + 
   scale_fill_tableau('tableau10medium')
 ```
-
-Will it be helpful if I add attributes to cluster CFGs?
-```{r}
-
-```
-
 
 
