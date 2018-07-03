@@ -5,7 +5,7 @@ date: "June 29, 2018"
 output: html_document
 ---
 
-Updated on 06/29/2018
+Updated on 7/3/2018
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
@@ -35,9 +35,7 @@ library(feather)
 
 ```{r Load feather data}
 # Load feather data
-path <- "~/Yao_Rdata/All_fcast_cv.feather"
-# write_feather(All_fcast, path)
-All_fcast <- read_feather(path)
+All_fcast <- read_feather("~/Yao_Rdata/All_fcast_CV.feather")
 ```
 
 Visualization is done in Shiny App.
@@ -47,7 +45,7 @@ Visualization is done in Shiny App.
 All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
-CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="W13" & Fiscal_Wk<="W26") %>%
+CFG_fcast <- CFG_fcast %>%
   # calculate absolute percent error for Prophet
   mutate(ape_Prophet = abs((Truth - Prophet)/Truth * 100)) %>%
   # calculate absolute percent error for ARIMA
@@ -136,6 +134,7 @@ results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region","Quarte
 path <- "~/Yao_Rdata/APE_values_CV.feather"
 write_feather(results, path)
 #APEresults_CV <- read_feather("~/Yao_Rdata/APE_values_CV.feather")
+APEresults_CV <- results
 
 MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
   summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE))
@@ -197,7 +196,5 @@ write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")
 ```{r close the cluster}
 # for Parallel package
 stopImplicitCluster()
-#saveRDS(All_fcast,'CFG_fcast_joined.rds') # my_data <- readRDS(file)
-#saveRDS(ErrorResults4plot,'ErrorResults4plot.rds') 
 ```
 
