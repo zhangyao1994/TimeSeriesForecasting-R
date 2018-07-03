@@ -135,7 +135,63 @@ results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region","Quarte
 
 path <- "~/Yao_Rdata/APE_values_CV.feather"
 write_feather(results, path)
-#APE_values <- read_feather("~/Yao_Rdata/APE_values.feather")
+#APEresults_CV <- read_feather("~/Yao_Rdata/APE_values_CV.feather")
+
+MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
+  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE))
+
+MAPE_CV_week.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
+  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE))
+
+# Overall evaluatiion for all CFGs # 7/2/2018
+# Attainment Rates
+Attainment_Rate_Cal <- function(x) {
+  length(which(x<=20))/sum(!is.na(x))*100
+}
+
+# Forecast Region Calculation
+results.clean <- MAPE_CV.Table # consider all CFGs
+
+Eval.results <- list()
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+# For different Regions
+for (i_Region in 1:len_Region){
+  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+  # MAPE
+  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # combine
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+}
+
+Eval.CV_fcastRegion <- data.frame(Eval.results)
+Eval.CV_fcastRegion <- data.frame(Eval.CV_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.CV_fcastRegion[,1:6] <- lapply(Eval.CV_fcastRegion[,1:6], function(x) as.numeric(as.character(x)))
+
+# Weekly Calculation
+results.clean <- MAPE_CV_week.Table # consider all CFGs
+
+Eval.results <- list()
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+# For different Regions
+for (i_Region in 1:len_Region){
+  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+  # MAPE
+  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # combine
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+}
+
+Eval.CV_week <- data.frame(Eval.results)
+Eval.CV_week <- data.frame(Eval.CV_week,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.CV_week[,1:6] <- lapply(Eval.CV_week[,1:6], function(x) as.numeric(as.character(x)))
+
+
+write_feather(Eval.CV_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
+write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")
 ```
 
 ```{r close the cluster}
