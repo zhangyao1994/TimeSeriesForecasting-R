@@ -13,6 +13,7 @@ library(tidyverse)
 library(scales)
 library(ggthemes)
 library(plotly)
+library(feather)
 options(scipen = 999)
 
 # !diagnostics off
@@ -33,9 +34,7 @@ blank_theme <- theme_minimal()+
 
 I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
 ```{r load the data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
-HDD_data <- hdd_qty
-rm(hdd_qty)
+HDD_data <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 ```
 
 ```{r CFG level exploration, echo=TRUE}
@@ -69,7 +68,7 @@ max(temp_qtr$CFG_Fiscal_Qtr_QTY)
 
 for (i in 1:len){
   
-  if (1){
+  if (0){
     # HDD Weekly Sales
     temp_data <- filter(temp_wk,CFG==CFGgroups[i])
     p_week<- temp_data %>%
@@ -82,12 +81,12 @@ for (i in 1:len){
       scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
       scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
-    print(p_week)
+    #print(p_week)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Wk_Sales',".png"), p_week, width=10)
   }
   
-  if (1){
+  if (0){
     # HDD Monthly Sales
     temp_data <- filter(temp_mo,CFG==CFGgroups[i])
     p_month <- temp_data %>%
@@ -101,12 +100,12 @@ for (i in 1:len){
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
       scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
       geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
-    print(p_month)
+    #print(p_month)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Mo_Sales',".png"), p_month, width=10)
   }
   
-  if (1){
+  if (0){
     # HDD Quarterly Sales
     temp_data <- filter(temp_qtr,CFG==CFGgroups[i])
     p_quarter <- temp_data %>%
@@ -119,7 +118,7 @@ for (i in 1:len){
       scale_color_tableau('tableau10medium') + 
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
       scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
-    print(p_quarter)
+    #print(p_quarter)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Qtr_Sales',".png"), p_quarter, width=10)
   }
