@@ -35,6 +35,7 @@ library(Rcpp)
 library(prophet)
 
 library(scales) # for percent
+library(feather)
 
 # make the code parallel using 'parallel' package
 library(iterators)
@@ -50,7 +51,7 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 
 # Weekly data
 hdd_qty %>% group_by(CFG, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
@@ -117,7 +118,7 @@ myforecast <- function(temp_data){
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  AvailableWeek <- 12
+  AvailableWeek <- 14
   lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
@@ -169,7 +170,7 @@ Comb_fcast[,4:ncol(Comb_fcast)] <- lapply(Comb_fcast[,4:ncol(Comb_fcast)], funct
 Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
 
 # For plot, do not delete the NA for now.
-saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
+write_feather(All_fcast, '~/Yao_Rdata/All_fcast.feather') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}
