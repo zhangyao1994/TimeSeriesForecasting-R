@@ -188,7 +188,6 @@ Eval.CV_week <- data.frame(Eval.results)
 Eval.CV_week <- data.frame(Eval.CV_week,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
 Eval.CV_week[,1:6] <- lapply(Eval.CV_week[,1:6], function(x) as.numeric(as.character(x)))
 
-
 write_feather(Eval.CV_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
 write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")
 ```

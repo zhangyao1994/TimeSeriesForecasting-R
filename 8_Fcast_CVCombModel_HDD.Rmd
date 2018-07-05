@@ -35,7 +35,66 @@ MAPE_CV.Table$Selection <- apply(MAPE_CV.Table,1,function(x) names(which.min(x[3
 APEresults %>% left_join(select(MAPE_CV.Table,CFG,Region,Selection)) -> APEresults.wtSelection
 ```
 
-```{r Update errors for Comb Model, echo=FALSE}
+```{r Update errors for training Comb Model, echo=FALSE}
+# update each CFG and Region
+UpdateOneRow <- function(OneRow){
+  if (is.null(unlist(OneRow$Selection))){
+    return(NA)
+  }
+  if (OneRow$Selection == "TBATS"){
+    OneRow$Comb <- OneRow$TBATS
+  } else if (OneRow$Selection == "Xgboost") {
+    OneRow$Comb <- OneRow$Xgboost
+  } else if (OneRow$Selection == "ARIMA") {
+    OneRow$Comb <- OneRow$ARIMA
+  } else if (OneRow$Selection == "Prophet") {
+    OneRow$Comb <- OneRow$Prophet
+  } else if (OneRow$Selection == "RF") {
+    OneRow$Comb <- OneRow$RF
+  } else if (OneRow$Selection == "lm") {
+    OneRow$Comb <- OneRow$lm
+  }
+  return(OneRow$Comb)
+}
+
+CombErrors <- apply(MAPE_CV.Table,1,UpdateOneRow)
+MAPE_CV.Table$Comb <- CombErrors # APE_FcastRegion_Comb
+
+MAPE_CV.Table[c("Selection" )] <- lapply(MAPE_CV.Table[c("Selection" )], function(x) as.factor(as.character(x)))
+
+path <- "~/Yao_Rdata/MAPE_CV.wtSelection.feather"
+write_feather(MAPE_CV.Table, path)
+
+# Attainment Rates
+Attainment_Rate_Cal <- function(x) {
+  length(which(x<=20))/sum(!is.na(x))*100
+}
+
+results.clean <- MAPE_CV.Table # consider all CFGs
+
+Eval.results <- list()
+# For different Regions
+Region.groups <- unique(results.clean$Region)
+len_Region <- length(Region.groups)
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+for (i_Region in 1:len_Region){
+  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+  # MAPE
+  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # combine
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+}
+
+Eval.results_fcastRegion <- data.frame(Eval.results)
+Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.results_fcastRegion[,1:7] <- lapply(Eval.results_fcastRegion[,1:7], function(x) as.numeric(as.character(x)))
+
+write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
+```
+
+```{r Update errors for testing Comb Model, echo=FALSE}
 # update each CFG and Region
 UpdateOneRow <- function(OneRow){
   if (is.null(unlist(OneRow$Selection))){
