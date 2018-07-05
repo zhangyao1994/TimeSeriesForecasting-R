@@ -83,7 +83,7 @@ Eval.results <- list()
 # For different Regions
 Region.groups <- unique(results.clean$Region)
 len_Region <- length(Region.groups)
-indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
   AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
@@ -94,15 +94,15 @@ for (i_Region in 1:len_Region){
   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
 }
 
-Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,14,2)])
-dimnames(Eval.results_fcastRegion)[[2]] <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
 Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_fcastRegion[,1:7] <- lapply(Eval.results_fcastRegion[,1:7], function(x) as.numeric(as.character(x)))
+Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
 
-Eval.results_wk <- data.frame(Eval.results[,seq(1,14,2)])
-dimnames(Eval.results_wk)[[2]] <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
 Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_wk[,1:7] <- lapply(Eval.results_wk[,1:7], function(x) as.numeric(as.character(x)))
+Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
 write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
