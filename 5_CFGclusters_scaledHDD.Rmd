@@ -5,7 +5,7 @@ date: "June 18, 2018"
 output: html_document
 ---
 
-Latest update: 6/19/2018
+Latest update: 7/10/2018
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
@@ -91,16 +91,22 @@ ggplot(wss_data, aes(x=centers, y=wss)) + geom_point(size = 2) + geom_line(size 
 ```
 
 I want to check the attributes of different clusters and see what findings I would have.
+
+```{r Using DPN and sku number to fill some NA attributes for CFGs}
+CFG.info <- hdd_qty %>% select(CFG,sku_num,Sample_DPN) %>% unique() %>% filter(CFG=='YANJING_900GB_10K_HDD_CFG
+')
+```
+
 ```{r}
 # join the CFG attribute table
 # CFG information
-CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
 HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
 
 # Interface
 CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
   dcast(CFGcluster~Interface, fun.aggregate = length) %>%
-  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface)),'NA')) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface)))) %>%
   ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
   geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
   geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
@@ -110,7 +116,7 @@ CFG.cluster.joined %>% select(CFGcluster,Interface) %>%
 # Interface Speed
 CFG.cluster.joined %>% select(CFGcluster,Interface_Speed) %>% 
   dcast(CFGcluster~Interface_Speed, fun.aggregate = length) %>%
-  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_Speed)),'NA')) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_Speed)))) %>%
   ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
   geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
   geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
@@ -121,7 +127,7 @@ CFG.cluster.joined %>% select(CFGcluster,Interface_Speed) %>%
 # Interface All
 CFG.cluster.joined %>% select(CFGcluster,Interface_All) %>% 
   dcast(CFGcluster~Interface_All, fun.aggregate = length) %>%
-  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_All)),'NA')) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Interface_All)))) %>%
   ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
   geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
   geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
@@ -142,7 +148,7 @@ CFG.cluster.joined %>% select(CFGcluster,Capacity) %>%
 # RPM
 CFG.cluster.joined %>% select(CFGcluster,RPM) %>% 
   dcast(CFGcluster~RPM, fun.aggregate = length) %>%
-  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$RPM)),'NA')) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$RPM)))) %>%
   ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
   geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
   geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
@@ -153,7 +159,7 @@ CFG.cluster.joined %>% select(CFGcluster,RPM) %>%
 # Form Factor
 CFG.cluster.joined %>% select(CFGcluster,Form_Factor) %>% 
   dcast(CFGcluster~Form_Factor, fun.aggregate = length) %>%
-  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Form_Factor)),'NA')) %>%
+  melt(id.vars = "CFGcluster", measure.vars = c(levels(factor(CFG.cluster.joined$Form_Factor)))) %>%
   ggplot(aes(x = CFGcluster,y = value, fill = variable)) + 
   geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
   geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +

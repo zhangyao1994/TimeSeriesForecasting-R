@@ -5,7 +5,7 @@ date: "May 31 - June 4, 2018"
 output: html_document
 ---
 
-Latet update: 6/18/2018
+Latet update: 7/10/2018
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -70,7 +70,7 @@ p_week <- week_data %>%
   scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
 p_week
 
 p_month <- month_data %>%
