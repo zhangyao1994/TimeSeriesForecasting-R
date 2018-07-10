@@ -82,7 +82,7 @@ p_month <- month_data %>%
   scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) + #coord_cartesian(ylim = c(0,2100000)) +
   geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
   # theme(axis.text.x=element_blank())
 p_month
@@ -97,7 +97,7 @@ p_quarter <- quarter_data %>%
   scale_color_tableau('tableau10medium') + 
   #scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
 p_quarter
 ```
 
@@ -118,7 +118,7 @@ p_Monthly_RGN_DESC <- temp_data %>%
   scale_color_tableau('tableau10medium') + 
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
 p_Monthly_RGN_DESC
 
 temp_data <- HDD_data %>% 
@@ -136,7 +136,7 @@ p_Quarterly_Region <- temp_data %>%
   #scale_color_tableau('tableau10medium') + 
   #scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
 p_Quarterly_Region
 
 temp_data %>% group_by(RGN_DESC) %>%
@@ -214,7 +214,7 @@ p_Monthly_Customer <- temp_data %>% arrange(desc(Fiscal_Mo)) %>%
   scale_color_tableau('tableau10medium') +
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = '',plot.title = element_text(hjust = 0.5))+
-  scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,150000))
+  scale_y_continuous(label=comma) + expand_limits(y = 0) # + coord_cartesian(ylim = c(0,150000))
 ggplotly(p_Monthly_Customer)
 
 HDD_data %>% 
