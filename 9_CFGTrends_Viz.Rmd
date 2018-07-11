@@ -5,10 +5,10 @@ date: "June 20, 2018"
 output: html_document
 ---
 
-Latest update: 7/10/2018
+Latest update: 7/11/2018
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,fig.align="center", fig.width=10)
 library(tidyverse)
 library(scales)
 library(ggthemes)
@@ -18,6 +18,9 @@ library(imputeTS)
 library(feather)
 options(scipen = 999)
 ```
+
+
+I think it is more meaningful to visualize the trends instead of the toal quantity.
 
 ```{r load the IRIS HDD Sales Data}
 hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
@@ -43,9 +46,211 @@ p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = RGN_DES
   scale_color_tableau('tableau10medium') +
   scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
-  facet_wrap(~RGN_DESC,ncol = 3, scales = "fixed")
+  facet_wrap(~RGN_DESC,ncol = 2, scales = "fixed")
 ggplotly(p)
 ```
 
 
+```{r By LOB_DESC}
+#length(unique(data.joined$LOB_DESC))
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,LOB_DESC) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
 
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = LOB_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by LOB', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~LOB_DESC,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+
+```{r By Top Custermer, fig.height=20}
+#length(unique(data.joined$Customer))
+
+# Select the Top
+# Only by Customer
+data.joined %>% group_by(Customer) %>%
+  summarise(Customer_QTY=sum(PART_QTY)) %>%
+  arrange(desc(Customer_QTY))->temp_data
+
+temp_sum <- sum(temp_data$Customer_QTY)
+temp_data$Customer_Perecent <- temp_data$Customer_QTY/temp_sum*100
+
+temp_data[1:12,] -> temp_data
+print(paste('The top 12 customers occupy',round(sum(temp_data$Customer_Perecent),2),'% of the total HDD_QTY, while the top 12 customers out of',length(unique(data.joined$Customer)),'customers is',round(12/length(unique(data.joined$Customer))*100,2),'%.'))
+Customer.selected <- temp_data$Customer
+# The top 30 customers bought 23.00% of the HDD from FY17Q1-FY19Q2.
+# Ignore the unknown customers.
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% filter(Customer %in% Customer.selected) %>%
+  group_by(CFG,Fiscal_Qtr,Customer) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Customer)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Customer', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  #scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~Customer,ncol = 3, scales = "fixed")
+ggplotly(p)
+```
+
+http://localhost:27102/session/viewhtml1d246f91061/index.html
+
+Customer ggploty picture saved in the above link
+
+```{r By Interface}
+#length(unique(CFG.info$Interface))
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,Interface) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Interface)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Interface', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~Interface,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+SATA quantity is almost all below 100,000.
+SAS shows some relatively higher and more changeable CFGs.
+
+```{r By Interface_Speed}
+#length(unique(CFG.info$Interface_Speed))
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,Interface_Speed) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Interface_Speed)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Interface Speed', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~Interface_Speed,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+Only two CFGs belong to 3G.
+6G CFGs seem stable.
+12G has some higher quantity.
+
+```{r By Capacity}
+#length(unique(CFG.info$Capacity))
+# Need to be delt with first
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,Capacity) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+temp_qtr$Capacity <- as.factor(temp_qtr$Capacity)
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Capacity)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Capacity', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  #scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+
+  #facet_wrap(~Capacity,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+
+The purple colors seem low, which indicates high capacity has low quantity.
+
+```{r By RPM}
+#length(unique(CFG.info$RPM))
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,RPM) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+temp_qtr$RPM <- as.factor(temp_qtr$RPM)
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = RPM)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by RPM', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~RPM,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+Two CFGs belong to 5900 and the quantity is very low and even none in FY19Q1.
+7200 CFGs overall seem very stable.
+10000 CFGs have large variety in the quantity as well as in the trend.
+15000 CFGs show two subgroups: one is decreasing and the other group is relatively stable.
+
+
+```{r By Interface_All}
+#length(unique(CFG.info$Interface_All))
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,Interface_All) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Interface_All)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Interface All', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~Interface_All,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+There are only two CFGs that belong to SATA3G and the quantity became very loww in FY19Q1.
+SAS6G CFGs are also very low in the past year FY18.
+Almost all SATA6G CFGs are below 100,000 and their trends are stable.
+Some of the SAS12G CFGs have higher quantity than 100,000.
+
+
+```{r By Form_Factor}
+#length(unique(CFG.info$Form_Factor))
+
+# Extract Quarterly Sales for each CFG
+data.joined %>% 
+  group_by(CFG,Fiscal_Qtr,Form_Factor) %>%
+  summarise(HDD_QTY=sum(PART_QTY)) -> temp_qtr
+
+temp_qtr$Form_Factor <- as.factor(temp_qtr$Form_Factor)
+
+p <- temp_qtr %>% ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group = CFG, color = Form_Factor)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5,alpha=0.6) +
+  labs(title = 'HDD Quarterly Sales by Form Factor', x = "Fiscal Quarter", y = "Part Quantity") +
+  theme_minimal(base_size = 14) +
+  scale_color_tableau('tableau10medium') +
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~Form_Factor,ncol = 2, scales = "fixed")
+ggplotly(p)
+```
+
+It seems that there are more abnormal high trends in 2.5, which inspires me to do abnormal detection and then cluster CFGs.I do not think Form Factors affect the trend a lot since I do not see obvious difference between 2.5 and 3.5.
