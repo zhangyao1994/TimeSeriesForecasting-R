@@ -1,0 +1,14 @@
+---
+title: "AnomalyDetection"
+author: "Yao"
+date: "July 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Anomaly Detection in time series
+
+I would like to detect the anomaly changes, which are the so-called "large orders", so that we can manage the big orders and lower the difficulty for forcast.
