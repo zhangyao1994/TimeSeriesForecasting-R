@@ -128,6 +128,10 @@ l_ggplotly
 CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
 CFG_fcast$mean <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
+
+CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:mean) -> CFG_fcast.joined.2
+write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
+
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   # calculate absolute percent error for MRP

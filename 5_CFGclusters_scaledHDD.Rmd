@@ -16,6 +16,7 @@ library(plotly)
 library(reshape2)
 library(feather)
 options(scipen = 999)
+library(tabplot)
 ```
 
 ```{r load the IRIS HDD Sales Data}
@@ -102,6 +103,8 @@ CFG.info <- hdd_qty %>% select(CFG,sku_num,Sample_DPN) %>% unique() %>% filter(C
 # CFG information
 CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
 HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
+
+tableplot(select(CFG.cluster.joined,CFGcluster,Interface,Interface_Speed,Capacity,RPM,Interface_All,Form_Factor))
 
 # Interface
 CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
