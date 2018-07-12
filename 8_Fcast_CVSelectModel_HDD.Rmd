@@ -1,5 +1,5 @@
 ---
-title: "Select Comb Models based on Cross-Validation and Apply to FY19"
+title: "Select Models based on Cross-Validation and Apply to FY19"
 author: "Yao"
 date: "July 3-5, 2018"
 output: html_document
@@ -15,50 +15,52 @@ library(feather)
 
 ```{r load data, echo=FALSE}
 # Test on the selected region: FY19W07-FY19W20
-APEresults <- read_feather("~/GitHub/ShinyPractice/Fcast-app/data/APE_values.feather")
+APEresults <- read_feather("~/Yao_Rdata/APE_values.feather")
 
 # Cross-validation on different quarters
-APEresults_CV <- read_feather('~/GitHub/ShinyPractice/Fcast-app/data/APE_values_CV.feather')
+APEresults_CV <- read_feather('~/Yao_Rdata/APE_values_CV.feather')
 
 # Prepare the MAPE CV data table as reference
 MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE))
+  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE),Mean=mean(APE_FcastRegion_mean))
 
 MAPE_CV_week.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE))
+  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE),Mean=mean(MAPE_wk_mean))
 
 ```
 
 ```{r Model Selection, echo=FALSE}
-MAPE_CV.Table$Selection <- apply(MAPE_CV.Table,1,function(x) names(which.min(x[3:8])))
+MAPE_CV.Table$Selection <- apply(MAPE_CV.Table,1,function(x) names(which.min(x[3:9])))
 
 APEresults %>% left_join(select(MAPE_CV.Table,CFG,Region,Selection)) -> APEresults.wtSelection
 ```
 
-```{r Update errors for training Comb Model, echo=FALSE}
+```{r Update errors for training Selected Model, echo=FALSE}
 # update each CFG and Region
 UpdateOneRow <- function(OneRow){
   if (is.null(unlist(OneRow$Selection))){
     return(NA)
   }
   if (OneRow$Selection == "TBATS"){
-    OneRow$Comb <- OneRow$TBATS
+    OneRow$Selected <- OneRow$TBATS
   } else if (OneRow$Selection == "Xgboost") {
-    OneRow$Comb <- OneRow$Xgboost
+    OneRow$Selected <- OneRow$Xgboost
   } else if (OneRow$Selection == "ARIMA") {
-    OneRow$Comb <- OneRow$ARIMA
+    OneRow$Selected <- OneRow$ARIMA
   } else if (OneRow$Selection == "Prophet") {
-    OneRow$Comb <- OneRow$Prophet
+    OneRow$Selected <- OneRow$Prophet
   } else if (OneRow$Selection == "RF") {
-    OneRow$Comb <- OneRow$RF
+    OneRow$Selected <- OneRow$RF
   } else if (OneRow$Selection == "lm") {
-    OneRow$Comb <- OneRow$lm
+    OneRow$Selected <- OneRow$lm
+  } else if (OneRow$Selection == "Mean") {
+    OneRow$Selected <- OneRow$Mean
   }
-  return(OneRow$Comb)
+  return(OneRow$Selected)
 }
 
-CombErrors <- apply(MAPE_CV.Table,1,UpdateOneRow)
-MAPE_CV.Table$Comb <- CombErrors # APE_FcastRegion_Comb
+SelectedErrors <- apply(MAPE_CV.Table,1,UpdateOneRow)
+MAPE_CV.Table$Selected <- SelectedErrors # APE_FcastRegion_Selected
 
 MAPE_CV.Table[c("Selection" )] <- lapply(MAPE_CV.Table[c("Selection" )], function(x) as.factor(as.character(x)))
 
@@ -76,7 +78,7 @@ Eval.results <- list()
 # For different Regions
 Region.groups <- unique(results.clean$Region)
 len_Region <- length(Region.groups)
-indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
   AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
@@ -89,42 +91,45 @@ for (i_Region in 1:len_Region){
 
 Eval.results_fcastRegion <- data.frame(Eval.results)
 Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_fcastRegion[,1:7] <- lapply(Eval.results_fcastRegion[,1:7], function(x) as.numeric(as.character(x)))
+Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
 ```
 
-```{r Update errors for testing Comb Model, echo=FALSE}
+```{r Update errors for testing Selected Model, echo=FALSE}
 # update each CFG and Region
 UpdateOneRow <- function(OneRow){
   if (is.null(unlist(OneRow$Selection))){
-    return(c(OneRow$MAPE_wk_Comb,OneRow$APE_FcastRegion_Comb))
+    return(c(OneRow$MAPE_wk_Selected,OneRow$APE_FcastRegion_Selected))
   }
   if (OneRow$Selection == "TBATS"){
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_TBATS
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_TBATS
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_TBATS
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_TBATS
   } else if (OneRow$Selection == "Xgboost") {
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_Xgboost
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_Xgboost
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_Xgboost
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_Xgboost
   } else if (OneRow$Selection == "ARIMA") {
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_ARIMA
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_ARIMA
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_ARIMA
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_ARIMA
   } else if (OneRow$Selection == "Prophet") {
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_Prophet
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_Prophet
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_Prophet
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_Prophet
   } else if (OneRow$Selection == "RF") {
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_RF
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_RF
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_RF
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_RF
   } else if (OneRow$Selection == "lm") {
-    OneRow$MAPE_wk_Comb <- OneRow$MAPE_wk_lm
-    OneRow$APE_FcastRegion_Comb <- OneRow$APE_FcastRegion_lm
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_lm
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_lm
+  } else if (OneRow$Selection == "Mean") {
+    OneRow$MAPE_wk_Selected <- OneRow$MAPE_wk_mean
+    OneRow$APE_FcastRegion_Selected <- OneRow$APE_FcastRegion_mean
   }
-  return(c(OneRow$MAPE_wk_Comb,OneRow$APE_FcastRegion_Comb))
+  return(c(OneRow$MAPE_wk_Selected,OneRow$APE_FcastRegion_Selected))
 }
 
-CombErrors <- apply(APEresults.wtSelection,1,UpdateOneRow) %>% t() %>% data.frame()
-APEresults.wtSelection$MAPE_wk_Comb <- CombErrors$X1 # MAPE_wk_Comb
-APEresults.wtSelection$APE_FcastRegion_Comb <- CombErrors$X2 # APE_FcastRegion_Comb
+SelectedErrors <- apply(APEresults.wtSelection,1,UpdateOneRow) %>% t() %>% data.frame()
+APEresults.wtSelection$MAPE_wk_Selected <- SelectedErrors$X1 # MAPE_wk_Selected
+APEresults.wtSelection$APE_FcastRegion_Selected <- SelectedErrors$X2 # APE_FcastRegion_Selected
 
 APEresults.wtSelection[c("Selection" )] <- lapply(APEresults.wtSelection[c("Selection" )], function(x) as.character(x))
 
@@ -142,7 +147,7 @@ Eval.results <- list()
 # For different Regions
 Region.groups <- unique(results.clean$Region)
 len_Region <- length(Region.groups)
-indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean','MAPE_wk_Selected','APE_FcastRegion_Selected')
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
   AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
@@ -153,15 +158,15 @@ for (i_Region in 1:len_Region){
   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
 }
 
-Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
-dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
 Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
+Eval.results_fcastRegion[,1:9] <- lapply(Eval.results_fcastRegion[,1:9], function(x) as.numeric(as.character(x)))
 
-Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_wk <- data.frame(Eval.results[,seq(1,18,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
 Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
+Eval.results_wk[,1:9] <- lapply(Eval.results_wk[,1:9], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
 write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
