@@ -5,7 +5,7 @@ date: "June 20, 2018"
 output: html_document
 ---
 
-Latest update: 7/10/2018
+Latest update: 6/20/2018
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
@@ -17,6 +17,7 @@ library(reshape2)
 library(imputeTS)
 library(feather)
 options(scipen = 999)
+library(tabplot)
 ```
 
 ```{r load the IRIS HDD Sales Data}
@@ -29,18 +30,67 @@ hdd_qty %>%
   group_by(CFG,Fiscal_Qtr) %>%
   summarise(CFG_Fiscal_Qtr_QTY=sum(PART_QTY)) -> temp_qtr
 
-# join the CFG attribute table
-# CFG information
-CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
-HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
+# Data transforamtion
+# row: CFGs; col: Quarters
+temp_qtr$CFG <- as.factor(temp_qtr$CFG)
+temp_CFG <- temp_qtr %>% spread(Fiscal_Qtr,CFG_Fiscal_Qtr_QTY) %>% t() # CFG names kept
+HDD.data <- temp_CFG %>% tail(n=nrow(temp_CFG)-1) %>% data.frame() # Only HDD data, col:CFG, row:qtr
+HDD.data.numeric <- lapply(HDD.data,function(x) as.numeric(as.character(x))) %>% data.frame()
+HDD.data.noScale <- HDD.data.numeric # %>% scale() %>% data.frame() # noScale
+HDD.noScale <- rbind(temp_CFG[1,],HDD.data.noScale) %>% t() %>% data.frame()
+dimnames(HDD.noScale)[[2]] <- c('CFG',temp_qtr$Fiscal_Qtr[1:10])
+HDD.noScale.plot <- HDD.noScale %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+
+# ggplotly(AllCFG_Qtr.noScale) 
+# http://localhost:15618/session/viewhtml26488f61a3d/index.html # noScale by Quarter
+# http://localhost:15618/session/viewhtml26484637683c/index.html # noScale by CFG
+```
+
+```{r kmeans cluster}
+# Deal with NAs
+HDD.noScale %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() -> HDD.clean
+HDD.clean[is.na(HDD.clean)] <- 0
+HDD.clean.numeric <- HDD.clean %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() 
+
+# Kmeans
+HDD.clean.numeric %>% kmeans(centers=4, nstart=10) -> km
+HDD_clustered <- data.frame(CFG=HDD.noScale$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+
+# Plot clusters
+AllCFG_Qtr.clusted <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
+  ggplot(aes(x=Fiscal_Qtr,y=CFG_Fiscal_Qtr_QTY,group=CFG,color=CFGcluster)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Quarterly Sales'), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 11) + 
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~CFGcluster)
+ggplotly(AllCFG_Qtr.clusted)
+```
+
+```{r Dertermine k value}
+wss <- (nrow(HDD.clean.numeric)-1)*sum(apply(HDD.clean.numeric, 2, var))
+# now calculate the weighted sum squares for all cluster numbers from 2 to 15
+for (i in 2:15) wss[i] <- sum(kmeans(HDD.clean.numeric,
+                                       nstart=10,
+                                       centers=i)$withinss)
+# turn wss data into a data frame for plotting
+wss_data <- data.frame(centers=1:15, wss)
+# make plot
+ggplot(wss_data, aes(x=centers, y=wss)) + geom_point(size = 2) + geom_line(size = 1.5) +
+  xlab("Number of Clusters") + ylab("Within groups sum of squares") + theme_minimal(base_size = 11)
 ```
 
 I want to check the attributes of different clusters and see what findings I would have.
 ```{r}
 # join the CFG attribute table
 # CFG information
-CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
 HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
+
+tableplot(select(CFG.cluster.joined,CFGcluster,Interface,Interface_Speed,Capacity,RPM,Interface_All,Form_Factor))
 
 # Interface
 CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
