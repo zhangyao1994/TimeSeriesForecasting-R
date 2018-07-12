@@ -86,7 +86,7 @@ myforecast <- function(temp_data){
   TBATS_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'TBATS',fcast$mean)
   
   # ARIMA
-  if (i_CFG %in% c(16,17,40,55,87) & i_Region==3){
+  if (i_CFG %in% c(16,17,40,55,87) & i_Region==3){ # I need to remove the unusual observations and stabilize the variance before using ARIMA
     ARIMA_fcast <- (c(CFGgroups[i_CFG],Regions[i_Region],'ARIMA',rep(NA,forecastPeriodLen)))
   } else {
     fit <- auto.arima(HDD.ts) # Some might fail
