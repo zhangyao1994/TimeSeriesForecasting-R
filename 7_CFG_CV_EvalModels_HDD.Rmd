@@ -42,22 +42,26 @@ Visualization is done in Shiny App.
 
 ```{r Calculate errors}
 # Data transformation for error calculations
-All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
+All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
+
+CFG_fcast$mean <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- CFG_fcast %>%
   # calculate absolute percent error for Prophet
-  mutate(ape_Prophet = abs((Truth - Prophet)/Truth * 100)) %>%
+  mutate(ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for ARIMA
-  mutate(ape_ARIMA = abs((Truth - ARIMA)/Truth * 100)) %>%
+  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for TBATS
-  mutate(ape_TBATS = abs((Truth - TBATS)/Truth * 100)) %>%
+  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for lm
-  mutate(ape_lm = abs((Truth - timetk_lm)/Truth * 100)) %>%
+  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for RF
-  mutate(ape_RF = abs((Truth - timetk_RF)/Truth * 100)) %>%
+  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Xgboost
-  mutate(ape_Xgboost = abs((Truth - timetk_Xgboost)/Truth * 100))
+  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for mean
+  mutate(ape_mean = abs((HDD_QTY - mean)/HDD_QTY * 100))
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
@@ -80,39 +84,46 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       # Weekly Error Calculation
       mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
       # ARIMA
       # Weekly Error Calculation
       mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
       # TBATS
       # Weekly Error Calculation
       mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
       # timetk lm
       # Weekly Error Calculation
       mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
       # timetk RF
       # Weekly Error Calculation
       mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
       # timetk Xgboost
       # Weekly Error Calculation
       mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost,na.rm = TRUE)-sum(temp_data$Truth,na.rm = TRUE))/sum(temp_data$Truth,na.rm = TRUE) * 100
+      APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
-      OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
+      # mean
+      # Weekly Error Calculation
+      mape_wk_mean<- mean(temp_data$ape_mean,na.rm = TRUE)
+      # 12-week Error Calculation
+      APE_fcastPeriod_mean <- abs(sum(temp_data$mean)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+      
+      
+      OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_mean,APE_fcastPeriod_mean)
       
       #mape_wk <- as.numeric(OneRow[seq(4,15,2)])
       #APE_fcastPeriod <- as.numeric(OneRow[seq(5,15,2)])
@@ -125,9 +136,9 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean')
 results <- data.frame(results)
-indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost')
+indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region","Quarter" )], function(x) as.character(x))
 
@@ -137,10 +148,10 @@ write_feather(results, path)
 APEresults_CV <- results
 
 MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE))
+  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE),Mean=mean(APE_FcastRegion_mean,na.rm = TRUE))
 
 MAPE_CV_week.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE))
+  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE),Mean=mean(MAPE_wk_mean,na.rm = TRUE))
 
 # Overall evaluatiion for all CFGs # 7/2/2018
 # Attainment Rates
@@ -152,7 +163,7 @@ Attainment_Rate_Cal <- function(x) {
 results.clean <- MAPE_CV.Table # consider all CFGs
 
 Eval.results <- list()
-indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean')
 # For different Regions
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
@@ -166,13 +177,13 @@ for (i_Region in 1:len_Region){
 
 Eval.CV_fcastRegion <- data.frame(Eval.results)
 Eval.CV_fcastRegion <- data.frame(Eval.CV_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.CV_fcastRegion[,1:6] <- lapply(Eval.CV_fcastRegion[,1:6], function(x) as.numeric(as.character(x)))
+Eval.CV_fcastRegion[,1:7] <- lapply(Eval.CV_fcastRegion[,1:7], function(x) as.numeric(as.character(x)))
 
 # Weekly Calculation
 results.clean <- MAPE_CV_week.Table # consider all CFGs
 
 Eval.results <- list()
-indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost')
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean')
 # For different Regions
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
@@ -186,7 +197,7 @@ for (i_Region in 1:len_Region){
 
 Eval.CV_week <- data.frame(Eval.results)
 Eval.CV_week <- data.frame(Eval.CV_week,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.CV_week[,1:6] <- lapply(Eval.CV_week[,1:6], function(x) as.numeric(as.character(x)))
+Eval.CV_week[,1:7] <- lapply(Eval.CV_week[,1:7], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.CV_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
 write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")

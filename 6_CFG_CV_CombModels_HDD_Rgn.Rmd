@@ -84,7 +84,7 @@ myforecast <- function(){
       next
     }
     
-    Truth <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'Truth',tail(test$y,Fcast_Wk_num))
+    Truth <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'HDD_QTY',tail(test$y,Fcast_Wk_num))
     
     # Add time series signature # For the last date of train region
     train_augmented <- train[nrow(train),] %>%
