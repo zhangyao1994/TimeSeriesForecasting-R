@@ -125,8 +125,9 @@ l_ggplotly
 
 ```{r Calculate errors}
 # Data transformation for error calculations
-CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) -> CFG_fcast
+CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
+CFG_fcast$mean <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   # calculate absolute percent error for MRP
@@ -142,14 +143,15 @@ CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   # calculate absolute percent error for RF
   mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Xgboost
-  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100))
+  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100)) %>%
+  # calculate absolute percent error for mean
+  mutate(ape_mean = abs((HDD_QTY - mean)/HDD_QTY * 100))
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
 len_CFG <- length(CFGgroups2)
 Region.groups <- levels(factor(CFG_fcast$Region))
 len_Region <- length(Region.groups)
-Model.groups <- levels(factor(CFG_fcast$Model))
 
 results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %dopar% {
   # HDD Weekly Sales for certain CFG and selected Region
@@ -201,9 +203,15 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     # 12-week Error Calculation
     APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost)
-    mape_wk <- as.numeric(OneRow[seq(3,16,2)])
-    APE_fcastPeriod <- as.numeric(OneRow[seq(4,16,2)])
+    # mean
+    # Weekly Error Calculation
+    mape_wk_mean<- mean(temp_data$ape_mean,na.rm = TRUE)
+    # 12-week Error Calculation
+    APE_fcastPeriod_mean <- abs(sum(temp_data$mean)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    
+    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_mean,APE_fcastPeriod_mean)
+    mape_wk <- as.numeric(OneRow[seq(3,18,2)])
+    APE_fcastPeriod <- as.numeric(OneRow[seq(4,18,2)])
     OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
     OneCFG <- rbind(OneCFG,OneRow)
   }
@@ -211,9 +219,9 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean','MAPE_wk_Selected','APE_FcastRegion_Selected')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Comb','APE_FcastRegion_Comb')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean','MAPE_wk_Selected','APE_FcastRegion_Selected')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
 
@@ -239,15 +247,15 @@ for (i_Region in 1:len_Region){
   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
 }
 
-Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,16,2)])
-dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
 Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_fcastRegion[,1:8] <- lapply(Eval.results_fcastRegion[,1:8], function(x) as.numeric(as.character(x)))
+Eval.results_fcastRegion[,1:9] <- lapply(Eval.results_fcastRegion[,1:9], function(x) as.numeric(as.character(x)))
 
-Eval.results_wk <- data.frame(Eval.results[,seq(1,16,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Comb')
+Eval.results_wk <- data.frame(Eval.results[,seq(1,18,2)])
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
 Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.results_wk[,1:8] <- lapply(Eval.results_wk[,1:8], function(x) as.numeric(as.character(x)))
+Eval.results_wk[,1:9] <- lapply(Eval.results_wk[,1:9], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
 write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
@@ -255,7 +263,7 @@ write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 
 ```{r Visualize Errors}
 ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
-           select(-Region,-Results,-Comb) %>%
+           select(-Region,-Results,-Selected) %>%
            gather(key="Model",value="Value") %>%
            ggplot(aes(Model,Value)) +
            geom_bar(stat = "identity") +
@@ -264,7 +272,7 @@ ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Atta
            scale_fill_tableau('tableau10medium'))
 
 ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
-           select(-Region,-Results,-Comb) %>%
+           select(-Region,-Results,-Selected) %>%
            gather(key="Model",value="Value") %>%
            ggplot(aes(Model,Value)) +
            geom_bar(stat = "identity") +
