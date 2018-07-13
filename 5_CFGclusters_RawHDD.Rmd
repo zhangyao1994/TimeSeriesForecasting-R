@@ -37,23 +37,24 @@ temp_CFG <- temp_qtr %>% spread(Fiscal_Qtr,CFG_Fiscal_Qtr_QTY) %>% t() # CFG nam
 HDD.data <- temp_CFG %>% tail(n=nrow(temp_CFG)-1) %>% data.frame() # Only HDD data, col:CFG, row:qtr
 HDD.data.numeric <- lapply(HDD.data,function(x) as.numeric(as.character(x))) %>% data.frame()
 HDD.data.noScale <- HDD.data.numeric # %>% scale() %>% data.frame() # noScale
-HDD.noScale <- rbind(temp_CFG[1,],HDD.data.noScale) %>% t() %>% data.frame()
+HDD.noScale <- rbind(temp_CFG[1,],HDD.data.noScale) %>% t() %>% data.frame() 
 dimnames(HDD.noScale)[[2]] <- c('CFG',temp_qtr$Fiscal_Qtr[1:10])
-HDD.noScale.plot <- HDD.noScale %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
-# ggplotly(AllCFG_Qtr.noScale) 
-# http://localhost:15618/session/viewhtml26488f61a3d/index.html # noScale by Quarter
-# http://localhost:15618/session/viewhtml26484637683c/index.html # noScale by CFG
+HDD.noScale.plot <- HDD.noScale %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 ```
 
 ```{r kmeans cluster}
 # Deal with NAs
 HDD.noScale %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() -> HDD.clean
+
+# Calculate the mean quarterly sales
+HDD.clean$Mean <- rowMeans(HDD.clean, na.rm = TRUE)
+
 HDD.clean[is.na(HDD.clean)] <- 0
-HDD.clean.numeric <- HDD.clean %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() 
+HDD.clean.numeric <- HDD.clean %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() 
 
 # Kmeans
-HDD.clean.numeric %>% kmeans(centers=4, nstart=10) -> km
+HDD.clean.numeric %>% kmeans(centers=10, nstart=10) -> km
 HDD_clustered <- data.frame(CFG=HDD.noScale$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
 # Plot clusters
@@ -88,9 +89,9 @@ I want to check the attributes of different clusters and see what findings I wou
 # join the CFG attribute table
 # CFG information
 CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
-HDD_clustered %>% select(CFG,CFGcluster) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
+HDD_clustered %>% select(CFG,CFGcluster,Mean) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
 
-tableplot(select(CFG.cluster.joined,CFGcluster,Interface,Interface_Speed,Capacity,RPM,Interface_All,Form_Factor))
+tableplot(select(CFG.cluster.joined,CFGcluster,Mean,Capacity,RPM,Interface_All,Form_Factor))
 
 # Interface
 CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
