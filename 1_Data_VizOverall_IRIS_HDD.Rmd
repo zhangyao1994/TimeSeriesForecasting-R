@@ -347,3 +347,61 @@ length(unique(HDD_data$BRAND_CATG_DESC))
 # p_Quarterly_BRAND_CATG_DESC
 ```
 
+```{r By Region and LOB}
+temp_data <- HDD_data %>% 
+  group_by(RGN_DESC,LOB_DESC,Fiscal_Qtr) %>%
+  summarise(RGN_LOB_Fiscal_Qtr_QTY=sum(PART_QTY)) # %>%
+  # filter(Fiscal_Qtr<'FY19Q2')
+  
+# HDD Quarterly Sales by Region and LOB
+p <- temp_data %>%
+  ggplot(aes(x=Fiscal_Qtr,y=RGN_LOB_Fiscal_Qtr_QTY,group=LOB_DESC, colour=LOB_DESC)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Quarterly Sales by Region and LOB FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~RGN_DESC)
+p
+```
+
+```{r By Region and Volume}
+temp_data <- HDD_data %>% 
+  group_by(CFG,RGN_DESC,Fiscal_Qtr) %>%
+  summarise(CFG_RGN_Qtr_QTY=sum(PART_QTY)) %>%
+  filter(Fiscal_Qtr<'FY19Q2')
+
+temp_data %>% ungroup() %>%
+  group_by(CFG,RGN_DESC) %>%
+   summarise(Avg_Qtr_HDD_QTY = sum(CFG_RGN_Qtr_QTY)/n_distinct(Fiscal_Qtr)) %>% 
+  mutate(HDD_Volume_Group = case_when(
+    Avg_Qtr_HDD_QTY <= 100 ~ 'Small',
+    Avg_Qtr_HDD_QTY > 100 & Avg_Qtr_HDD_QTY <= 1000 ~ 'Medium',
+    Avg_Qtr_HDD_QTY > 1000 & Avg_Qtr_HDD_QTY <= 10000 ~ 'Large',
+    Avg_Qtr_HDD_QTY > 10000 ~ 'Strategic'
+  )) -> data.grouped
+
+temp_data %>% left_join(data.grouped) -> data.joined
+
+data.joined %>%
+  group_by(RGN_DESC,HDD_Volume_Group,Fiscal_Qtr) %>%
+  summarise(RGN_Vol_Qtr_QTY=sum(CFG_RGN_Qtr_QTY)) -> data.4plot
+  
+# HDD Quarterly Sales by Region and Volumne
+p <- data.4plot %>%
+  ggplot(aes(x=Fiscal_Qtr,y=RGN_Vol_Qtr_QTY,group=HDD_Volume_Group, colour=HDD_Volume_Group)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('Overall HDD Quarterly Sales by Region and Volume FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
+  scale_y_continuous(label=comma) + expand_limits(y = 0) +
+  facet_wrap(~RGN_DESC)
+p
+```
+
