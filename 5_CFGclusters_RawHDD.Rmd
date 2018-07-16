@@ -5,7 +5,7 @@ date: "June 20, 2018"
 output: html_document
 ---
 
-Latest update: 6/20/2018
+Latest update: 7/16/2018
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
@@ -50,12 +50,20 @@ HDD.noScale %>% select(starts_with("FY")) %>% lapply(function(x) as.numeric(as.c
 # Calculate the mean quarterly sales
 HDD.clean$Mean <- rowMeans(HDD.clean, na.rm = TRUE)
 
+HDD.clean %>% 
+  mutate(HDD_Volume_Group = case_when(
+    Mean <= 100 ~ 'Small',
+    Mean > 100 & Mean <= 1000 ~ 'Medium',
+    Mean > 1000 & Mean <= 10000 ~ 'Large',
+    Mean > 10000 & Mean <= 100000 ~ 'Strategic',
+    Mean > 100000 ~ 'Over 100K'
+  )) -> HDD.clean.grouped
+
 HDD.clean[is.na(HDD.clean)] <- 0
-HDD.clean.numeric <- HDD.clean %>% lapply(function(x) as.numeric(as.character(x))) %>% data.frame() 
 
 # Kmeans
-HDD.clean.numeric %>% kmeans(centers=10, nstart=10) -> km
-HDD_clustered <- data.frame(CFG=HDD.noScale$CFG,HDD.clean.numeric, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
+HDD.clean %>% kmeans(centers=4, nstart=10) -> km
+HDD_clustered <- data.frame(CFG=HDD.noScale$CFG,HDD.clean, CFGcluster=factor(km$cluster)) %>% gather(key="Fiscal_Qtr",value="CFG_Fiscal_Qtr_QTY",FY17Q1:FY19Q2)
 
 # Plot clusters
 AllCFG_Qtr.clusted <- HDD_clustered %>% filter(Fiscal_Qtr<'FY19Q2') %>%
@@ -72,9 +80,9 @@ ggplotly(AllCFG_Qtr.clusted)
 ```
 
 ```{r Dertermine k value}
-wss <- (nrow(HDD.clean.numeric)-1)*sum(apply(HDD.clean.numeric, 2, var))
+wss <- (nrow(HDD.clean)-1)*sum(apply(HDD.clean, 2, var))
 # now calculate the weighted sum squares for all cluster numbers from 2 to 15
-for (i in 2:15) wss[i] <- sum(kmeans(HDD.clean.numeric,
+for (i in 2:15) wss[i] <- sum(kmeans(HDD.clean,
                                        nstart=10,
                                        centers=i)$withinss)
 # turn wss data into a data frame for plotting
@@ -90,8 +98,13 @@ I want to check the attributes of different clusters and see what findings I wou
 # CFG information
 CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo_filled.csv")
 HDD_clustered %>% select(CFG,CFGcluster,Mean) %>% unique() %>% left_join(CFG.info) -> CFG.cluster.joined
-
 tableplot(select(CFG.cluster.joined,CFGcluster,Mean,Capacity,RPM,Interface_All,Form_Factor))
+
+data.frame(CFG=HDD.noScale$CFG,HDD.clean.grouped) %>% left_join(CFG.info) %>%
+  mutate(HDD_Volume_Group = factor(HDD_Volume_Group, levels = c('Small', 'Medium', 'Large','Strategic','Over 100K'))) -> CFG.cluster.joined
+indx <- c('Capacity','RPM','Form_Factor')
+CFG.cluster.joined[indx] <- lapply(CFG.cluster.joined[indx], function(x) as.factor(x))
+tableplot(select(CFG.cluster.joined,HDD_Volume_Group,Mean,Capacity,RPM,Interface_All,Form_Factor))
 
 # Interface
 CFG.cluster.joined %>% select(CFGcluster,Interface) %>% 
