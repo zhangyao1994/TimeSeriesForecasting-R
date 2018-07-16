@@ -1,0 +1,180 @@
+---
+title: "IRIS HDD Forecasting for each Cluster by Region and Volume"
+author: "Yao"
+date: "July 16, 2018"
+output: html_document
+---
+
+This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand for one cluster, and then compare my forecasting All_fcast to MRP.
+Update on 07/16/2018.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+
+# Load egboost relevant libraries
+library(quantmod); library(TTR); library(xgboost);
+
+# Load timetk package
+library(tidyquant)
+library(timetk)
+library(broom)
+
+# Random Forest
+library(party)
+library(randomForest)
+
+# Load TBATS package, as well as for ARIMA
+library(forecast)
+
+# Load Facebook Prophet package
+library(Rcpp)
+library(prophet)
+
+library(scales) # for percent
+library(feather)
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## IRIS HDD Weekly Demand Forecasting for each Cluster
+
+```{r load the data}
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+
+# Weekly data
+hdd_qty %>% group_by(Cluster, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r Forecast Function}
+myforecast <- function(temp_data){
+  df <- data.frame(ds = temp_data$date, y = temp_data$HDD_QTY)
+  n <- nrow(df)
+  
+  # Split into training and test sets
+  train <- df %>% filter(ds < '2018-03-23') # No time ahead
+  test <- df %>% filter(ds >= '2018-03-23')
+  
+  WeekAhead <- 0  # no time ahead
+  forecastPeriodLen <- 24 + WeekAhead
+  
+  if (nrow(test)<1 | nrow(train)<2){
+    return(c(Clustergroups[i_Cluster],Regions[i_Region],rep(NA,forecastPeriodLen+1)))
+  }
+  
+  # Add time series signature
+  train_augmented <- train[nrow(train),] %>%
+    tk_augment_timeseries_signature()
+
+  HDD.ts <- ts(train$y,frequency=365.25/7, end = train_augmented$year+train_augmented$yday/365.25)
+  
+  # TBATS
+  fit <- tbats(HDD.ts)
+  fcast <- forecast(fit,h=forecastPeriodLen)
+  TBATS_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'TBATS',fcast$mean)
+  
+  # ARIMA
+  if (i_Cluster %in% c(16,17,40,55,87) & i_Region==3){ # I need to remove the unusual observations and stabilize the variance before using ARIMA
+    ARIMA_fcast <- (c(Clustergroups[i_Cluster],Regions[i_Region],'ARIMA',rep(NA,forecastPeriodLen)))
+  } else {
+    fit <- auto.arima(HDD.ts) # Some might fail
+    fcast <- forecast(fit,h=forecastPeriodLen)
+    ARIMA_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'ARIMA',fcast$mean)
+  }
+  
+  # Prophet
+  m <- prophet(train)
+  future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
+  fcast <- predict(m, future)
+  Prophet_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'Prophet',fcast$yhat)
+  
+  # lm
+  # Add time series signature
+  train_augmented <- train %>%
+    tk_augment_timeseries_signature()
+  # maunually drop unvalid variables
+  temp <-
+    train_augmented %>% select(-wday.lbl,-month.lbl,-diff)
+  # Remove the column with only one value
+  if (nrow(temp)>1) {
+    temp <- Filter(function(x)(length(unique(x))>1), temp)
+  }
+  
+  # Model using the augmented features
+  fit <- lm(y ~ ., data = na.omit(temp))
+  # We need to again augment the time series signature to the test set.
+  test_augmented <- test %>%
+    tk_augment_timeseries_signature()
+  yhat_test <- predict(fit, newdata = test_augmented)
+  AvailableWeek <- 14
+  lm_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  
+  # Random Forest
+  # Model using the augmented features
+  fit <- randomForest(y ~ ., data = na.omit(temp))
+  yhat_test <- predict(fit, newdata = test_augmented)
+  RF_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'timetk_RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  
+  # Xgboost
+  # Train the xgboost model using the "xgboost" function
+  dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
+  xgModel = xgboost(data = dtrain, nrounds = ceiling(sqrt(nrow(dtrain)))) # sqrt(nrow(dtrain)), I guess
+  # Make the predictions on the test data
+  temp_test <- test_augmented[,colnames(temp)]
+  preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
+  Xgboost_fcast <- c(Clustergroups[i_Cluster],Regions[i_Region],'timetk_Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  
+  return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast))
+}
+```
+
+
+```{r Run the fuctions parallel}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+Clustergroups <- levels(factor(HDD_Weekly$Cluster))
+len <- length(Clustergroups)
+
+Regions <- levels(factor(HDD_Weekly$RGN_DESC))
+num.Regions <- length(Regions)
+
+Comb_fcast <- data.frame()
+for (i_Region in 1:num.Regions){
+  Comb_fcast0 <- foreach(i_Cluster=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+    # Forecast for each Cluster
+    temp_data <- HDD_Weekly %>% filter(Cluster==Clustergroups[i_Cluster],RGN_DESC==Regions[i_Region])
+    oneCluster_fcast <- myforecast(temp_data)
+    oneCluster_fcast
+  }
+  Comb_fcast <- rbind(Comb_fcast,Comb_fcast0)
+}
+
+# Assign Colume names
+weekNames <- c(sprintf("FY19W0%d", 7:9),sprintf("FY19W%d", 10:30))
+dimnames(Comb_fcast)[[2]] <- c('Cluster','Region','Model',as.character(weekNames))
+# HDD quntatity should be numeric.
+Comb_fcast[,4:ncol(Comb_fcast)] <- lapply(Comb_fcast[,4:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
+
+# Transformation
+Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
+
+# For plot, do not delete the NA for now.
+write_feather(All_fcast, '~/Yao_Rdata/All_fcast.feather') # my_data <- readRDS(file)
+```
+
+```{r close the clusters}
+# for Parallel package
+stopImplicitCluster()
+```
+
