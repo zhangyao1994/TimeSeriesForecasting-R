@@ -51,12 +51,44 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each Cluster
 
 ```{r load the data}
-hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+HDD_data <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+
+```
+
+```{r Label and Create Clusters}
+CFG_RGN_Qtr_data <- HDD_data %>% 
+  group_by(CFG,RGN_DESC,Fiscal_Qtr) %>%
+  summarise(CFG_RGN_Qtr_QTY=sum(PART_QTY)) %>%
+  filter(Fiscal_Qtr<'FY19Q2')
+
+CFG_RGN_Qtr_data %>% ungroup() %>%
+  group_by(CFG,RGN_DESC) %>%
+   summarise(Avg_Qtr_HDD_QTY = sum(CFG_RGN_Qtr_QTY)/n_distinct(Fiscal_Qtr)) %>% 
+  mutate(HDD_Volume_Group = case_when(
+    Avg_Qtr_HDD_QTY <= 100 ~ 'Small',
+    Avg_Qtr_HDD_QTY > 100 & Avg_Qtr_HDD_QTY <= 1000 ~ 'Medium',
+    Avg_Qtr_HDD_QTY > 1000 & Avg_Qtr_HDD_QTY <= 10000 ~ 'Large',
+    Avg_Qtr_HDD_QTY > 10000 ~ 'Strategic'
+  )) -> CFG_RGN_Qtr_data.grouped
+
+HDD_data %>% left_join(CFG_RGN_Qtr_data.grouped) -> data.joined
+
+data.joined %>% ungroup() %>%
+  mutate(Cluster = case_when(
+    HDD_Volume_Group ==  'Small' | HDD_Volume_Group ==  'Medium'~ 'Small and Medium',
+    RGN_DESC == 'Americas' &  HDD_Volume_Group ==  'Large' ~ 'Americas Large',
+    RGN_DESC == 'Americas' &  HDD_Volume_Group ==  'Strategic' ~ 'Americas Strategic',
+    RGN_DESC == 'APJ' &  HDD_Volume_Group ==  'Large' ~ 'APJ Large',
+    RGN_DESC == 'APJ' &  HDD_Volume_Group ==  'Strategic' ~ 'APJ Strategic',
+    RGN_DESC == 'EMEA' &  HDD_Volume_Group ==  'Large' ~ 'EMEA Large',
+    RGN_DESC == 'EMEA' &  HDD_Volume_Group ==  'Strategic' ~ 'EMEA Strategic'
+  )) -> data.grouped
 
 # Weekly data
-hdd_qty %>% group_by(Cluster, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+data.grouped %>% group_by(Cluster, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
 ```
+
 
 ```{r Forecast Function}
 myforecast <- function(temp_data){
