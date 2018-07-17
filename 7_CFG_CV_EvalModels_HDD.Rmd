@@ -123,7 +123,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       # 12-week Error Calculation
       APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
       
-      OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_mean,APE_fcastPeriod_mean)
+      OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_Ensemble,APE_fcastPeriod_Ensemble)
       
       #mape_wk <- as.numeric(OneRow[seq(4,15,2)])
       #APE_fcastPeriod <- as.numeric(OneRow[seq(5,15,2)])
@@ -136,9 +136,9 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean')
+dimnames(results)[[2]] <- c('CFG','Region','Quarter','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Ensemble','APE_FcastRegion_Ensemble')
 results <- data.frame(results)
-indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean')
+indx <- c('MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Ensemble','APE_FcastRegion_Ensemble')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region","Quarter" )] <- lapply(results[c("CFG","Region","Quarter" )], function(x) as.character(x))
 
@@ -148,10 +148,10 @@ write_feather(results, path)
 APEresults_CV <- results
 
 MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE),Mean=mean(APE_FcastRegion_mean,na.rm = TRUE))
+  summarise(Prophet=mean(APE_FcastRegion_Prophet,na.rm = TRUE),ARIMA=mean(APE_FcastRegion_ARIMA,na.rm = TRUE),TBATS=mean(APE_FcastRegion_TBATS,na.rm = TRUE),lm=mean(APE_FcastRegion_lm,na.rm = TRUE),RF=mean(APE_FcastRegion_RF,na.rm = TRUE),Xgboost=mean(APE_FcastRegion_Xgboost,na.rm = TRUE),Ensemble=mean(APE_FcastRegion_Ensemble,na.rm = TRUE))
 
 MAPE_CV_week.Table <- APEresults_CV %>% group_by(CFG,Region) %>% 
-  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE),Mean=mean(MAPE_wk_mean,na.rm = TRUE))
+  summarise(Prophet=mean(MAPE_wk_Prophet,na.rm = TRUE),ARIMA=mean(MAPE_wk_ARIMA,na.rm = TRUE),TBATS=mean(MAPE_wk_TBATS,na.rm = TRUE),lm=mean(MAPE_wk_lm,na.rm = TRUE),RF=mean(MAPE_wk_RF,na.rm = TRUE),Xgboost=mean(MAPE_wk_Xgboost,na.rm = TRUE),Ensemble=mean(MAPE_wk_Ensemble,na.rm = TRUE))
 
 # Overall evaluatiion for all CFGs # 7/2/2018
 # Attainment Rates
@@ -160,10 +160,17 @@ Attainment_Rate_Cal <- function(x) {
 }
 
 # Forecast Region Calculation
-results.clean <- MAPE_CV.Table # consider all CFGs
+# Consider all CFGs
+# Consider weights
+CFG_RGN_QTR_data.grouped <- read_feather("~/Yao_Rdata/CFG_RGN_Qtr_grouped.feather")
+# Add a columne w: weight # The sum of w is 1.#
+Total_Avg_Qtr_HDD_QTY <- sum(CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY)
+CFG_RGN_QTR_data.grouped$w <- CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY/Total_Avg_Qtr_HDD_QTY
+MAPE_CV.Table %>% left_join(CFG_RGN_QTR_data.grouped, by = c("CFG","Region"="RGN_DESC")) -> results.clean
+
 
 Eval.results <- list()
-indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean')
+indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble')
 # For different Regions
 for (i_Region in 1:len_Region){
   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
@@ -171,36 +178,48 @@ for (i_Region in 1:len_Region){
   # MAPE
   MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
   MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # Weighted MAPE
+  weighted_MAPE <- lapply(data.selected[indx],function(x) sum(x*data.selected$w,na.rm = TRUE))
   # combine
-  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE)
 }
 
 Eval.CV_fcastRegion <- data.frame(Eval.results)
-Eval.CV_fcastRegion <- data.frame(Eval.CV_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+Eval.CV_fcastRegion <- data.frame(Eval.CV_fcastRegion,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
 Eval.CV_fcastRegion[,1:7] <- lapply(Eval.CV_fcastRegion[,1:7], function(x) as.numeric(as.character(x)))
 
-# Weekly Calculation
-results.clean <- MAPE_CV_week.Table # consider all CFGs
-
-Eval.results <- list()
-indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean')
-# For different Regions
-for (i_Region in 1:len_Region){
-  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
-  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
-  # MAPE
-  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
-  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
-  # combine
-  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
-}
-
-Eval.CV_week <- data.frame(Eval.results)
-Eval.CV_week <- data.frame(Eval.CV_week,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
-Eval.CV_week[,1:7] <- lapply(Eval.CV_week[,1:7], function(x) as.numeric(as.character(x)))
+# # Weekly Calculation
+# results.clean <- MAPE_CV_week.Table # consider all CFGs
+# 
+# Eval.results <- list()
+# indx <- c('Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble')
+# # For different Regions
+# for (i_Region in 1:len_Region){
+#   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+#   AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+#   # MAPE
+#   MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+#   MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+#   # combine
+#   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+# }
+# 
+# Eval.CV_week <- data.frame(Eval.results)
+# Eval.CV_week <- data.frame(Eval.CV_week,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+# Eval.CV_week[,1:7] <- lapply(Eval.CV_week[,1:7], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.CV_fcastRegion,"~/Yao_Rdata/Eval.CV_fcastRegion.feather")
-write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")
+# write_feather(Eval.CV_week,"~/Yao_Rdata/Eval.CV_wk.feather")
+
+# Viz the errors
+ggplotly(select(Eval.CV_fcastRegion,-lm) %>%
+           gather(key="Model",value="Value",-Region,-Results) %>%
+           ggplot(aes(Model,Value)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Forecast Accuracy of Four Quarter Cross-Validation'), x = "Models", y = 'Metric') + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium') +
+           facet_wrap(~Results+Region, scales = "free", ncol = 3))
 ```
 
 ```{r close the cluster}
