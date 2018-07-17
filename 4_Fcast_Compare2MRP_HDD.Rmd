@@ -81,6 +81,10 @@ write_feather(CFG_fcast.joined, "~/Yao_Rdata/CFG_fcast.feather")
 ```{r Load feather data}
 # Load feather data
 CFG_fcast.joined <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
+CFG_RGN_QTR_data.grouped <- read_feather("~/Yao_Rdata/CFG_RGN_Qtr_grouped.feather")
+# Add a columne w: weight # The sum of w is 1.#
+Total_Avg_Qtr_HDD_QTY <- sum(CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY)
+CFG_RGN_QTR_data.grouped$w <- CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY/Total_Avg_Qtr_HDD_QTY
 ```
 
 
@@ -127,9 +131,9 @@ l_ggplotly
 # Data transformation for error calculations
 CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
-CFG_fcast$mean <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
+CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 
-CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:mean) -> CFG_fcast.joined.2
+CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
 write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
@@ -148,8 +152,8 @@ CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Xgboost
   mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for mean
-  mutate(ape_mean = abs((HDD_QTY - mean)/HDD_QTY * 100))
+  # calculate absolute percent error for Ensemble
+  mutate(ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
@@ -207,13 +211,13 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     # 12-week Error Calculation
     APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    # mean
+    # Ensemble
     # Weekly Error Calculation
-    mape_wk_mean<- mean(temp_data$ape_mean,na.rm = TRUE)
+    mape_wk_Ensemble<- mean(temp_data$ape_Ensemble,na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_mean <- abs(sum(temp_data$mean)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
-    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_mean,APE_fcastPeriod_mean)
+    OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_Ensemble,APE_fcastPeriod_Ensemble)
     mape_wk <- as.numeric(OneRow[seq(3,18,2)])
     APE_fcastPeriod <- as.numeric(OneRow[seq(4,18,2)])
     OneRow <- c(OneRow,min(mape_wk),min(APE_fcastPeriod))
@@ -223,11 +227,13 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
 }
 
 
-dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean','MAPE_wk_Selected','APE_FcastRegion_Selected')
+dimnames(results)[[2]] <- c('CFG','Region','MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Ensemble','APE_FcastRegion_Ensemble','MAPE_wk_Selected','APE_FcastRegion_Selected')
 results <- data.frame(results)
-indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_mean','APE_FcastRegion_mean','MAPE_wk_Selected','APE_FcastRegion_Selected')
+indx <- c('MAPE_wk_MRP','APE_FcastRegion_MRP','MAPE_wk_Prophet','APE_FcastRegion_Prophet','MAPE_wk_ARIMA','APE_FcastRegion_ARIMA','MAPE_wk_TBATS','APE_FcastRegion_TBATS','MAPE_wk_lm','APE_FcastRegion_lm','MAPE_wk_RF','APE_FcastRegion_RF','MAPE_wk_Xgboost','APE_FcastRegion_Xgboost','MAPE_wk_Ensemble','APE_FcastRegion_Ensemble','MAPE_wk_Selected','APE_FcastRegion_Selected')
 results[indx] <- lapply(results[indx], function(x) as.numeric(as.character(x)))
 results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) as.character(x))
+
+results %>% left_join(CFG_RGN_QTR_data.grouped, by = c("CFG","Region"="RGN_DESC")) -> results.weight
 
 path <- "~/Yao_Rdata/APE_values.feather"
 write_feather(results, path)
@@ -237,7 +243,7 @@ Attainment_Rate_Cal <- function(x) {
   length(which(x<=20))/sum(!is.na(x))*100
 }
 
-results.clean <- results # consider all CFGs
+results.clean <- results.weight # consider all CFGs
 
 Eval.results <- list()
 # For different Regions
@@ -247,40 +253,72 @@ for (i_Region in 1:len_Region){
   # MAPE
   MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
   MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+  # Weighted MAPE
+  weighted_MAPE <- lapply(data.selected[indx],function(x) sum(x*data.selected$w,na.rm = TRUE))
   # combine
-  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median)
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE)
 }
 
 Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
-dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
-Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
 Eval.results_fcastRegion[,1:9] <- lapply(Eval.results_fcastRegion[,1:9], function(x) as.numeric(as.character(x)))
 
 Eval.results_wk <- data.frame(Eval.results[,seq(1,18,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Mean','Selected')
-Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 3),Results=c('Attainment_Rates','MAPE','MAPE_median'))
+dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
 Eval.results_wk[,1:9] <- lapply(Eval.results_wk[,1:9], function(x) as.numeric(as.character(x)))
 
 write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
 write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 ```
 
+```{r APE Table}
+APE.selected <- results[,c(1,2,seq(4,20,2))]
+colnames(APE.selected) <- c("CFG","Region",'MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+
+APE.selected %>% datatable(options=list(rowCallback = JS(
+  'function(row, data) {
+        var num_data = data.slice(1,data.length)
+        num_data.sort(function (a, b) {  return a - b;  });
+        for(i=1;i < data.length; i++) {
+          if(data[i]==num_data[8]) {
+          $("td:eq("+i+")", row).css("background-color", "#ffffff")
+  } else if(data[i]==num_data[7]) {
+        $("td:eq("+i+")", row).css("background-color", "#e6ffe6")
+  } else if(data[i]==num_data[6]) {
+        $("td:eq("+i+")", row).css("background-color", "#b3ffb3")
+  } else if(data[i]==num_data[5]) {
+        $("td:eq("+i+")", row).css("background-color", "#80ff80")
+  } else if(data[i]==num_data[4]) {
+        $("td:eq("+i+")", row).css("background-color", "#4dff4d")
+  } else if(data[i]==num_data[3]) {
+        $("td:eq("+i+")", row).css("background-color", "#1aff1a")
+  } else if(data[i]==num_data[2]) {
+        $("td:eq("+i+")", row).css("background-color", "#00e600")
+  }
+        }
+  }'))) %>% 
+  formatRound(columns=c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected'), digits=2) 
+```
+
+
 ```{r Visualize Errors}
-ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
            select(-Region,-Results,-Selected) %>%
            gather(key="Model",value="Value") %>%
            ggplot(aes(Model,Value)) +
            geom_bar(stat = "identity") +
-           labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
            theme_minimal(base_size = 14) + 
            scale_fill_tableau('tableau10medium'))
 
-ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Attainment_Rates') %>% 
+ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
            select(-Region,-Results,-Selected) %>%
            gather(key="Model",value="Value") %>%
            ggplot(aes(Model,Value)) +
            geom_bar(stat = "identity") +
-           labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Attainment_Rates','_',' '),"(%)")) + 
+           labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
            theme_minimal(base_size = 14) + 
            scale_fill_tableau('tableau10medium'))
 
