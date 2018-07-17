@@ -28,6 +28,8 @@ MAPE_CV.Table <- APEresults_CV %>% group_by(CFG,Region) %>%
 
 ```
 
+The following part is based on mean MAPE over four quarters.
+
 ```{r Model Selection and Weighted, echo=FALSE}
 MAPE_CV.Table$Selection <- apply(MAPE_CV.Table,1,function(x) names(which.min(x[3:9])))
 
@@ -184,3 +186,82 @@ write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.fea
 write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 ```
 
+For different quarters, calculations are as follows.
+
+```{r Model Selection and Weighted, echo=FALSE}
+APEresults_CV <- data.frame(APEresults_CV[,c(1,2,3,seq(4,17,2))])
+colnames(APEresults_CV) <- c("CFG","Region",'Quarter','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble')
+APEresults_CV$Selection <- apply(APEresults_CV,1,function(x) names(which.min(x[4:10])))
+```
+
+```{r Update errors for training Preferred Model, echo=FALSE}
+# update each CFG and Region
+UpdateOneRow <- function(OneRow){
+  if (is.null(unlist(OneRow$Selection))){
+    return(NA)
+  }
+  if (OneRow$Selection == "TBATS"){
+    OneRow$Preferred <- OneRow$TBATS
+  } else if (OneRow$Selection == "Xgboost") {
+    OneRow$Preferred <- OneRow$Xgboost
+  } else if (OneRow$Selection == "ARIMA") {
+    OneRow$Preferred <- OneRow$ARIMA
+  } else if (OneRow$Selection == "Prophet") {
+    OneRow$Preferred <- OneRow$Prophet
+  } else if (OneRow$Selection == "RF") {
+    OneRow$Preferred <- OneRow$RF
+  } else if (OneRow$Selection == "lm") {
+    OneRow$Preferred <- OneRow$lm
+  } else if (OneRow$Selection == "Ensemble") {
+    OneRow$Preferred <- OneRow$Ensemble
+  }
+  return(OneRow$Preferred)
+}
+
+PreferredErrors <- apply(APEresults_CV,1,UpdateOneRow)
+APEresults_CV$Preferred <- PreferredErrors # APE_FcastRegion_Preferred
+
+APEresults_CV[c("Selection" )] <- lapply(APEresults_CV[c("Selection" )], function(x) as.factor(as.character(x)))
+
+path <- "~/Yao_Rdata/MAPE_CV.wtSelection.feather"
+#write_feather(APEresults_CV, path)
+
+# Consider weights
+HDD_data <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+
+CFG_RGN_Qtr_data <- HDD_data %>% 
+  filter(Fiscal_Qtr %in% c('FY18Q1','FY18Q2','FY18Q3','FY18Q4')) %>%
+  group_by(CFG,RGN_DESC,Fiscal_Qtr) %>%
+  summarise(CFG_RGN_Qtr_QTY=sum(PART_QTY))
+
+CFG_RGN_Qtr_data %>% ungroup() %>%
+  group_by(CFG,RGN_DESC) %>%
+  mutate(HDD_Volume_Group = case_when(
+    CFG_RGN_Qtr_QTY <= 100 ~ 'Small',
+    CFG_RGN_Qtr_QTY > 100 & CFG_RGN_Qtr_QTY <= 1000 ~ 'Medium',
+    CFG_RGN_Qtr_QTY > 1000 & CFG_RGN_Qtr_QTY <= 10000 ~ 'Large',
+    CFG_RGN_Qtr_QTY > 10000 ~ 'Strategic'
+  )) -> CFG_RGN_Qtr_data.grouped
+
+# Add a columne w: weight # The sum of w is 1.#
+Total_CFG_RGN_Qtr_QTY <- sum(CFG_RGN_Qtr_data.grouped$CFG_RGN_Qtr_QTY)
+CFG_RGN_Qtr_data.grouped$w <- CFG_RGN_Qtr_data.grouped$CFG_RGN_Qtr_QTY/Total_CFG_RGN_Qtr_QTY
+APEresults_CV %>% left_join(CFG_RGN_Qtr_data.grouped, by = c("CFG","Region"="RGN_DESC","Quarter"="Fiscal_Qtr")) -> APEresults_CV.weighted
+
+write_excel_csv(APEresults_CV.weighted,"~/Yao_Rdata/MAPE_CV.wtSelection.4Qtr.csv")
+
+temp <- table(APEresults_CV.weighted$Selection) %>% data.frame()
+
+p <- select(APEresults_CV.weighted,CFG,Region,Quarter,Selection) %>%
+           ggplot(aes(x=Quarter,fill=Selection)) +
+           geom_bar(position = "dodge") +
+           labs(title = paste('Summary of Preferred Model'), x = "Models", y = 'Number of CFGs') + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium') +
+           facet_wrap(~Region, scales = "free", ncol = 1)
+ggplotly(p)
+
+select(APEresults_CV.weighted,CFG,Region,Quarter,Selection) %>%
+  spread(Quarter,Selection) -> PreferenceTable
+write_excel_csv(PreferenceTable,"~/Yao_Rdata/MAPE_CV.wtSelection.4Qtr.v2.csv")
+```
