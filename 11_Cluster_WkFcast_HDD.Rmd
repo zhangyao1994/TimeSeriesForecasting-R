@@ -70,6 +70,7 @@ CFG_RGN_Qtr_data %>% ungroup() %>%
     Avg_Qtr_HDD_QTY > 1000 & Avg_Qtr_HDD_QTY <= 10000 ~ 'Large',
     Avg_Qtr_HDD_QTY > 10000 ~ 'Strategic'
   )) -> CFG_RGN_Qtr_data.grouped
+write_feather(CFG_RGN_Qtr_data.grouped,"~/Yao_Rdata/CFG_RGN_Qtr_grouped.feather")
 
 HDD_data %>% left_join(CFG_RGN_Qtr_data.grouped) -> data.joined
 
@@ -87,6 +88,19 @@ data.joined %>% ungroup() %>%
 # Weekly data
 data.grouped %>% group_by(Cluster, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+
+LastWk <- tail(unique(HDD_data$Fiscal_Wk), n=1)
+p <- HDD_Weekly %>%
+  ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group=Cluster,color=Cluster)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste('HDD Weekly Sales by Clusters FY17W01-',LastWk, sep = ""), x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+ggplotly(p)
 ```
 
 
