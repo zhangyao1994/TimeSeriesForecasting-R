@@ -5,7 +5,8 @@ date: "June 29, 2018"
 output: html_document
 ---
 
-Updated on 7/3/2018
+Updated on 7/17/2018
+Add "Mean/Ensemble" Model and "Weighted MAPE".
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
@@ -44,7 +45,7 @@ Visualization is done in Shiny App.
 # Data transformation for error calculations
 All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
-CFG_fcast$mean <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
+CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- CFG_fcast %>%
@@ -60,8 +61,8 @@ CFG_fcast <- CFG_fcast %>%
   mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Xgboost
   mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for mean
-  mutate(ape_mean = abs((HDD_QTY - mean)/HDD_QTY * 100))
+  # calculate absolute percent error for Ensemble
+  mutate(ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
@@ -116,12 +117,11 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       # 12-week Error Calculation
       APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost,na.rm = TRUE)-sum(temp_data$HDD_QTY,na.rm = TRUE))/sum(temp_data$HDD_QTY,na.rm = TRUE) * 100
       
-      # mean
+      # Ensemble
       # Weekly Error Calculation
-      mape_wk_mean<- mean(temp_data$ape_mean,na.rm = TRUE)
+      mape_wk_Ensemble<- mean(temp_data$ape_Ensemble,na.rm = TRUE)
       # 12-week Error Calculation
-      APE_fcastPeriod_mean <- abs(sum(temp_data$mean)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
-      
+      APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
       
       OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_mean,APE_fcastPeriod_mean)
       
