@@ -329,3 +329,11 @@ ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Weighted_MAPE
 stopImplicitCluster()
 ```
 
+```{r Best Selection for the test region}
+APE.selected <- results[,c(1,2,seq(4,20,2))]
+colnames(APE.selected) <- c("CFG","Region",'MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+APE.selected$Selection <- apply(APE.selected,1,function(x) names(which.min(x[4:10])))
+APE.selected[c("Selection" )] <- lapply(APE.selected[c("Selection" )], function(x) as.factor(as.character(x)))
+write_feather(APE.selected,"~/Yao_Rdata/TestSelection.feather")
+```
+

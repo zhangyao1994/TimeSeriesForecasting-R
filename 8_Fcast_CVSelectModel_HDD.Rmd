@@ -13,6 +13,7 @@ library(tidyverse)
 
 # fast data format
 library(feather)
+library(reshape2)
 ```
 
 ```{r load data, echo=FALSE}
@@ -223,8 +224,12 @@ APEresults_CV$Preferred <- PreferredErrors # APE_FcastRegion_Preferred
 
 APEresults_CV[c("Selection" )] <- lapply(APEresults_CV[c("Selection" )], function(x) as.factor(as.character(x)))
 
-path <- "~/Yao_Rdata/MAPE_CV.wtSelection.feather"
-#write_feather(APEresults_CV, path)
+path <- "~/Yao_Rdata/MAPE_CV.wtSelection4Qtr.feather"
+write_feather(APEresults_CV, path)
+
+# Compare to the Test Region Selection
+select(APEresults_CV,CFG,Region) %>% left_join(TestSelection) %>% unique() -> temp
+write_excel_csv(temp,'temp.csv')
 
 # Consider weights
 HDD_data <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
@@ -252,14 +257,30 @@ write_excel_csv(APEresults_CV.weighted,"~/Yao_Rdata/MAPE_CV.wtSelection.4Qtr.csv
 
 temp <- table(APEresults_CV.weighted$Selection) %>% data.frame()
 
+# BY Region
 p <- select(APEresults_CV.weighted,CFG,Region,Quarter,Selection) %>%
-           ggplot(aes(x=Quarter,fill=Selection)) +
-           geom_bar(position = "dodge") +
-           labs(title = paste('Summary of Preferred Model'), x = "Models", y = 'Number of CFGs') + 
-           theme_minimal(base_size = 14) + 
-           scale_fill_tableau('tableau10medium') +
-           facet_wrap(~Region, scales = "free", ncol = 1)
+  filter(Selection != 'NULL') %>%
+  ggplot(aes(x=Quarter,fill=Selection)) +
+  geom_bar(position = "dodge") +
+  labs(title = paste('Summary of Preferred Model'), x = "Models", y = 'Number of CFGs') + 
+  theme_minimal(base_size = 14) + 
+  scale_fill_tableau('tableau10medium') +
+  facet_wrap(~Region, scales = "free", ncol = 1)
 ggplotly(p)
+
+# Overall Summary
+data.selected <- select(APEresults_CV.weighted,CFG,Region,Quarter,Selection) %>% 
+  filter(Selection != 'NULL') 
+data.selected %>%
+  dcast(Quarter~Selection, fun.aggregate = length) %>%
+  melt(id.vars = "Quarter", measure.vars = c(levels(factor(data.selected$Selection)))) %>%
+  ggplot(aes(x = Quarter,y = value, fill = variable)) + 
+  geom_bar(stat = "identity", position = position_dodge(width = .8), width = 0.7) +
+  geom_text(aes(label = value), position = position_dodge(width = .8), vjust = -0.5) +
+  labs(title = paste('Summary of Preferred Model'), x = "Models", y = 'Number of CFGs') + 
+  theme_minimal(base_size = 14) + 
+  scale_fill_tableau('tableau10medium')
+
 
 select(APEresults_CV.weighted,CFG,Region,Quarter,Selection) %>%
   spread(Quarter,Selection) -> PreferenceTable
