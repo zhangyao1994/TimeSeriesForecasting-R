@@ -5,7 +5,7 @@ date: "May 23, 2018"
 output: html_document
 ---
 
-Updated on 07/10/2018.
+Updated on 07/18/2018.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -22,7 +22,7 @@ db = dbConnect(odbc::odbc(),
                driver = 'SQL Server',
                server = 'IRISAGL01.aus.amer.dell.com',
                user = 'Yao_Z',
-               password = 'y67uhgt@Y')
+               password = 'y67uhgt$Y')
 ```
 
 It is not well known that you can run SQL code in an R Notebook code chunk. To use SQL, open an R Notebook in the RStudio IDE under the File > New File menu. Start a new code chunk with {sql}, and specify your connection with the connection=con code chunk option. If you want to send the query output to an R dataframe use output.var = "mydataframe" in the code chunk options. When you specify output.var you will be able to use the output in subsequent R code chunks. In this example, we use the output in ggplot.
@@ -55,7 +55,6 @@ ORDER BY D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
 ```
 
 
-
 ```{r Deal with missing data}
 Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
 
@@ -72,6 +71,65 @@ apply(hdd_qty, 2, function(x) any(is.na(x)))
 # All NAs have been cleaned.
 
 write_feather(hdd_qty,'~/Yao_Rdata/HDD_QTY_IRIS.feather')
+```
+
+
+```{sql connection=db, output.var = 'mrp_data0'}
+SELECT [VERSION], MONWKYR, CFG, REGION, SUM(DATA) AS MRP_CT, Commodity_Desc
+FROM IRIS.Base.MRP_Weekly A
+JOIN IRIS.DIM.DPN B 
+ON A.PART = B.DPN
+WHERE B.CFG LIKE '%HDD%' AND B.Commodity_Desc IN ('Hard Drive')--Verified with other restrictions. Good for now.
+GROUP BY [VERSION], MONWKYR, CFG, REGION, Commodity_Desc
+```
+
+```{r}
+write_feather(mrp_data0,'~/Yao_Rdata/mrp_HDD.feather')
+
+mrp_data <- mrp_data0
+# Extract Month,Week,Year from MONWKYR
+mrp_data$MON <- substr(mrp_data$MONWKYR, start = 1, stop = 3)
+mrp_data$WK <- substr(mrp_data$MONWKYR, start = 5, stop = 5)
+mrp_data$YR <- substr(mrp_data$MONWKYR, start = 6, stop = 7)
+mrp_data$YRMON <- paste(mrp_data$YR,mrp_data$MON)
+
+#mrp_data[c("MON","WK","YR")] <- lapply(mrp_data[c("MON","WK","YR")], function(x) as.factor(as.character(x)))
+
+mrp_data %>% 
+  mutate(VERSION = factor(VERSION, levels = c("FY19Q2W5","FY19Q2W6","FY19Q2W7","FY19Q2W8","FY19Q2W9","FY19Q2W10"))) %>%
+  #mutate(MON = factor(MON, levels = c('JUN','JUL','AUG','SEP','OCT','NOV','DEC','JAN','FEB','MAR','APR','MAY'))) %>%
+  mutate(YRMON = factor(YRMON, levels = c('19 JUN','19 JUL','19 AUG','19 SEP','19 OCT','19 NOV','19 DEC','19 JAN','20 FEB','20 MAR','20 APR','20 MAY','20 JUN'))) %>%
+  arrange(VERSION,CFG,REGION,YRMON,WK) -> mrp_data.ordered
+```
+
+```{sql connection=db, output.var = 'calr2Fisc_match'}
+SELECT [CLDR_YYYYMMDD_VAL]
+      ,[CLDR_WEEK_VAL]
+      ,[CLDR_MTH_VAL]
+      ,[CLDR_QTR_VAL]
+      ,[FISC_WEEK_VAL]
+      ,[FISC_WEEK_END_DATE]
+      ,[FISC_MTH_VAL]
+      ,[FISC_QTR_VAL]
+      ,[FISC_YR_VAL]
+	  ,[CLDR_MTH_WEEK_NUM]
+  FROM [IRIS].[Base].[COMN_BASE.CORP_CLDR]
+  WHERE FISC_YR_NUM>=2019 AND FISC_YR_NUM<=2020
+```
+
+```{r}
+write_feather(calr2Fisc_match,'~/Yao_Rdata/calr2Fisc_match.feather')
+
+# Preprocessing to match calender to fiscal year
+calr2Fisc_match$CLDR_YR <- substr(calr2Fisc_match$CLDR_QTR_VAL,start = 1,stop = 4) # Use the CLDR Year to merge
+# weekNames <- c(sprintf("FY19W0%d", 1:9),sprintf("FY19W%d", 10:52))
+# cbind(1:nrow(mrp_data.ordered),weekNames) %>% data.frame() -> Fiscal_wk # This does not work since some do not have 52 weeks.
+mrp_data.ordered$CLDR_YR <- case_when(mrp_data.ordered$YRMON %in% c('19 JUN','19 JUL','19 AUG','19 SEP','19 OCT','19 NOV','19 DEC')~'2019',
+                                      mrp_data.ordered$YRMON %in% c('19 JAN','20 FEB','20 MAR','20 APR','20 MAY','20 JUN')~'2020')
+
+mrp_data.ordered$WK <- as.numeric(mrp_data.ordered$WK)
+
+mrp_data.ordered %>% left_join(select(calr2Fisc_match,CLDR_YR,CLDR_MTH_VAL,CLDR_MTH_WEEK_NUM,FISC_YR_VAL,FISC_QTR_VAL,FISC_MTH_VAL,FISC_WEEK_VAL),by = c('CLDR_YR','MON'='CLDR_MTH_VAL','WK'='CLDR_MTH_WEEK_NUM')) %>% unique() -> mrp_data.wFiscal # FISC_WEEK_END_DATE,
 ```
 
 
