@@ -1,0 +1,56 @@
+---
+title: "Hyperion Calendar Mapping"
+author: "Cinkie You"
+date: "July 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(DBI)
+
+db_iris = dbConnect(odbc::odbc(),
+                    driver = 'SQL Server',
+                    server = 'IRISAGL01.aus.amer.dell.com',
+                    user = 'SSRS_User',
+                    password = 'SSRS_User')
+
+```
+
+```{r create_mapping}
+
+dell_calendar = dbGetQuery(db_iris, "SELECT * FROM IRIS.DIM.Date")
+
+mo_calendar = tibble(Mo = paste0('M', str_pad(c(12,1:11), width = 2, side = 'left', pad = 0)), 
+                     Calendar_Mo = toupper(month.abb),
+                     Calendar_Qtr = rep(paste0('CQ',1:4),each = 3))
+
+hyperion_calendar_mapping = dell_calendar %>% 
+  distinct(Fiscal_Qtr, Fiscal_Mo, Fiscal_Wk) %>% 
+  arrange(Fiscal_Qtr, Fiscal_Mo, Fiscal_Wk) %>% 
+  filter(!is.na(Fiscal_Wk)) %>% 
+  mutate(Mo = substr(Fiscal_Mo, 5,7),
+         Yr = substr(Fiscal_Mo, 3,4)) %>% 
+  left_join(mo_calendar, by = 'Mo') %>%  
+  group_by(Fiscal_Mo) %>% 
+  mutate(Wk_Num = paste0('W', row_number())) %>% 
+  mutate(Hyperion_Wk_MONWKYR = paste0(Calendar_Mo, Wk_Num, Yr)) %>% 
+  group_by(Fiscal_Qtr) %>% 
+  mutate(Hyperion_Wk_VERSION = paste0(Fiscal_Qtr, 'W', row_number())) %>% 
+  select(Fiscal_Qtr, Fiscal_Mo, Fiscal_Wk, Calendar_Qtr, Hyperion_Wk_MONWKYR, Hyperion_Wk_VERSION)
+
+## add calendar quarter as well.
+hyperion_calendar_mapping2 = dell_calendar %>% 
+  filter(!is.na(Fiscal_Wk)) %>% 
+  select(Fiscal_Date, Fiscal_Wk, Fiscal_Wk_End_Date) %>% 
+  left_join(hyperion_calendar_mapping, by = 'Fiscal_Wk') %>% 
+  mutate(Calendar_Qtr = paste0('CY', substr(Fiscal_Wk_End_Date,3,4), Calendar_Qtr)) %>% 
+  select(Fiscal_Date, Calendar_Qtr, Hyperion_Wk_MONWKYR, Hyperion_Wk_VERSION)
+
+hyperion_calendar_mapping2 %>% writexl::write_xlsx("data/Hyperion_Calendar_Mapping.xlsx")
+
+
+```
+

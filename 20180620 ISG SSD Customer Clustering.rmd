@@ -1,0 +1,971 @@
+---
+title: "ISG SSD Customer Clustering"
+author: "Cinkie You"
+date: "May 23, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r conn_db}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(DBI)
+db_iris = dbConnect(odbc::odbc(),
+                    driver = 'SQL Server',
+                    server = 'IRISAGL01.aus.amer.dell.com',
+                    user = 'Cinkie_You',
+                    password = 'k19920125K')
+```
+
+```{sql ssd_qty, connection=db_iris, output.var = 'btcc_ssd_qty'}
+
+SELECT 
+  C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, 
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+  WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+  ELSE A.LOB_DESC END AS LOB_DESC, A.BRAND_CATG_DESC, 
+  A.RGN_DESC,
+  A.GBL_PARNT_ACCT_NM AS Customer, 
+  COUNT(DISTINCT QTE_NBR) AS NUM_QTE,
+  SUM(ITM_QTY) AS PART_QTY
+FROM IRIS.[Base].[ISG_Business_Transformation.isgOrders] AS A 
+JOIN IRIS.[Base].[ISG_Business_Transformation.isgOrdersDetails] B
+ON A.ORD_NBR = B.ORD_NBR AND A.FMLY_PFOLIO_DESC = B.FMLY_PFOLIO_DESC AND A.SRC_BU_ID = B.SRC_BU_ID
+JOIN IRIS.DIM.Date C
+ON B.ORD_DT = C.Fiscal_Date
+JOIN IRIS_Data_Mart.[dbo].[SKU_CFG_Bridge] D
+ON B.ITM_NBR = D.sku_num
+WHERE D.Cfg_Desc LIKE '%SSD%' AND Commodity_Desc IN ('Hard Drive', 'Controller Cards/HBA') AND C.Fiscal_Yr >= 'FY17' AND A.DELL_EMC_ORDER_FLAG = 'DELL' AND (A.LOB_DESC IN ('PowerEdge','Cloud Products') OR A.MGMT_PROD_LVL_3_NM = 'Storage')
+GROUP BY
+  C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, 
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+  WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+  ELSE A.LOB_DESC END, A.BRAND_CATG_DESC, 
+  A.RGN_DESC, A.GBL_PARNT_ACCT_NM
+ORDER BY C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
+
+```
+
+```{sql sys_qty, connection=db_iris, output.var = 'btcc_sys_qty'}
+
+SELECT 
+  C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, 
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+  WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+  ELSE A.LOB_DESC END AS LOB_DESC, A.BRAND_CATG_DESC, 
+  A.RGN_DESC,
+  A.GBL_PARNT_ACCT_NM AS Customer, 
+  COUNT(DISTINCT QTE_NBR) AS NUM_QTE,
+  SUM(SYS_QTY_DELL) AS SYS_QTY
+FROM IRIS.[Base].[ISG_Business_Transformation.isgOrders] AS A 
+JOIN IRIS.DIM.Date C
+ON A.ORD_DT = C.Fiscal_Date
+WHERE A.DELL_EMC_ORDER_FLAG = 'DELL' AND (A.LOB_DESC IN ('PowerEdge','Cloud Products') OR A.MGMT_PROD_LVL_3_NM = 'Storage')
+GROUP BY
+  C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk, C.Fiscal_Wk_End_Date, 
+  CASE WHEN A.LOB_DESC = 'PowerEdge' AND A.ESI_order_flag = 'Y' THEN 'PowerEdge - ESI'
+  WHEN A.MGMT_PROD_LVL_3_NM = 'Storage' AND A.DELL_EMC_ORDER_FLAG = 'DELL' THEN 'Storage - DELL'
+  ELSE A.LOB_DESC END, A.BRAND_CATG_DESC, 
+  A.RGN_DESC, A.GBL_PARNT_ACCT_NM
+ORDER BY C.Fiscal_Yr, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
+
+```
+
+
+```{r compare_data}
+
+library(tidyverse)
+library(ggthemes)
+
+hyperion_ssd_cfg = read.csv("~/Planning/Forecast/201806 SSD Forecast/data/SSD_FY16_FY19M03_Transformed.csv", stringsAsFactors=FALSE)
+
+hyperion_ssd_cfg = hyperion_ssd_cfg %>% 
+  mutate(CFG = gsub('_CFG', '', CFG))
+
+hyperion_cfg = unique(hyperion_ssd_cfg$CFG)
+
+btcc_missing_cfg = setdiff(hyperion_cfg, unique(btcc_ssd_qty$CFG))
+
+hyperion_ssd_cfg %>% 
+  # filter(CFG == 'SSD_ESG_2_5_960GB_SATA_RI_6Gbs') %>%
+  filter(CFG %in% btcc_missing_cfg & Fiscal_Yr >= 'FY17') %>%
+  group_by(CFG, Fiscal_Yr) %>% 
+  summarise(QTY = sum(QTY)) %>% 
+  arrange(desc(QTY))
+
+btcc_ssd_qty %>% 
+  filter(!(CFG %in% hyperion_cfg)) %>% 
+  group_by(CFG) %>% 
+  summarise(QTY = sum(PART_QTY)) %>% 
+  arrange(desc(QTY))
+
+
+```
+
+
+```{r add_SSD_Volume_Group}
+# library(prophet)
+
+library(tidyverse)
+library(ggthemes)
+
+btcc_ssd_qty = btcc_ssd_qty %>% 
+  mutate(Customer = ifelse(
+    grepl('Dummy|disti|\032|APPOINTED|ACCT-R', Customer, ignore.case = T) | Customer == '' | is.na(Customer),
+    'Unknown_Customer', Customer
+  )) %>% 
+  mutate(NUM_QTE = as.numeric(NUM_QTE))
+
+btcc_sys_qty = btcc_sys_qty %>% 
+  mutate(Customer = ifelse(
+    grepl('Dummy|disti|\032|APPOINTED|ACCT-R', Customer, ignore.case = T) | Customer == '' | is.na(Customer),
+    'Unknown_Customer', Customer
+  )) %>% 
+  mutate(NUM_QTE = as.numeric(NUM_QTE))
+
+wk_list = btcc_ssd_qty %>% 
+  distinct(Fiscal_Wk, Fiscal_Wk_End_Date) %>% 
+  arrange(Fiscal_Wk)
+
+mo_list = btcc_ssd_qty %>% 
+  distinct(Fiscal_Mo) %>% 
+  arrange(Fiscal_Mo)
+
+qtr_list = btcc_ssd_qty %>% 
+  distinct(Fiscal_Qtr) %>% 
+  arrange(Fiscal_Qtr)
+
+cust_ssd_seg = btcc_ssd_qty %>%
+  group_by(Customer) %>% 
+  summarise(Avg_Qtr_SSD_QTY = sum(PART_QTY)/n_distinct(Fiscal_Qtr)) %>% 
+  mutate(SSD_Volume_Group = case_when(
+    Avg_Qtr_SSD_QTY <= 50 | Customer == 'Unknown_Customer' ~ 'Small',
+    Avg_Qtr_SSD_QTY > 50 & Avg_Qtr_SSD_QTY <= 1000 ~ 'Medium',
+    Avg_Qtr_SSD_QTY > 1000 & Avg_Qtr_SSD_QTY <= 10000 ~ 'Large',
+    Avg_Qtr_SSD_QTY > 10000 ~ 'Strategic'
+  )) %>% 
+  left_join(
+    btcc_sys_qty %>% 
+      group_by(Customer) %>% 
+      summarise(first_order_yr = min(substr(Fiscal_Mo,1,4))), by = 'Customer'
+  ) %>% 
+  ungroup()
+
+table(cust_ssd_seg$SSD_Volume_Group)
+
+btcc_ssd_qty = btcc_ssd_qty %>% 
+  left_join(cust_ssd_seg %>% select(Customer, SSD_Volume_Group), by = 'Customer')
+
+
+
+```
+
+```{r SSD_Volume_Group_analysis}
+
+btcc_ssd_qty %>% 
+  group_by(LOB_DESC, SSD_Volume_Group) %>% 
+  summarise(n_cust = n_distinct(Customer),
+            y = sum(PART_QTY)) %>% 
+  group_by(LOB_DESC) %>% 
+  mutate(ptg = y/sum(y)) %>%
+  mutate(SSD_Volume_Group = factor(SSD_Volume_Group, levels = c('Small', 'Medium', 'Large','Strategic'))) %>%
+  ggplot(aes(x = LOB_DESC, y = y, fill = SSD_Volume_Group)) +
+  geom_bar(stat='identity') +
+  geom_text(aes(label = paste0(round(100*ptg), '%')), colour = 'white', fontface = 'bold', 
+            size = 4, position = position_stack(vjust = .5)) +
+  scale_fill_tableau('tableau10medium') +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom', axis.text = element_text(size = 8), 
+        legend.text = element_text(size = 8), legend.title = element_text(size = 8)) +
+  guides(fill = guide_legend(ncol = 2)) +
+  labs(x = '', y = 'SSD Part Quantity', fill = 'Customer Size', title = 'ISG SSD Demand by Customer Size & LOB')
+
+btcc_ssd_qty %>% 
+  filter(Fiscal_Mo < 'FY19M05') %>% 
+  group_by(SSD_Volume_Group, Fiscal_Mo) %>% 
+  summarise(y = sum(PART_QTY)) %>% 
+  ungroup() %>% 
+  mutate(SSD_Volume_Group = factor(SSD_Volume_Group, levels = c('Small', 'Medium', 'Large','Strategic'))) %>%
+  ggplot(aes(x = Fiscal_Mo, y = y, color = SSD_Volume_Group)) +
+  geom_line(aes(group = SSD_Volume_Group), size = 1.5) +
+  geom_point(aes(group = SSD_Volume_Group), size = 2) +
+  geom_vline(xintercept = c(12.5, 24.5), color = '#444444', linetype = 2) +
+  scale_x_discrete(breaks = c('FY17M01', 'FY17M04','FY17M07','FY17M10',
+                              'FY18M01', 'FY18M04','FY18M07','FY18M10',
+                              'FY19M01', 'FY19M04')) +
+  scale_color_tableau('tableau10medium') +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom', axis.text = element_text(size = 8), 
+        legend.text = element_text(size = 8), legend.title = element_text(size = 8)) +
+  guides(fill = guide_legend(nrow = 1)) +
+  labs(x = '', y = 'SSD Part Quantity', fill = 'Customer Size', title = 'ISG SSD Monthly Demand by SSD Customer Group')
+
+
+
+btcc_ssd_qty %>% 
+  group_by(LOB_DESC, Fiscal_Qtr, SSD_Volume_Group) %>% 
+  summarise(n_cust = n_distinct(Customer),
+            y = sum(PART_QTY)) %>% 
+  mutate(SSD_Volume_Group = factor(SSD_Volume_Group, levels = c('Small', 'Medium', 'Large','Strategic'))) %>%
+  filter(Fiscal_Qtr < 'FY19Q2') %>% 
+  ggplot(aes(x = Fiscal_Qtr, y = y, fill = SSD_Volume_Group)) + 
+  facet_wrap(~LOB_DESC, ncol = 1, scales = 'free_y') +
+  geom_bar(aes(group = SSD_Volume_Group), stat = 'identity') +
+  scale_fill_tableau('tableau10medium') +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom', axis.text = element_text(size = 8), 
+        legend.text = element_text(size = 8), legend.title = element_text(size = 8)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(x = '', y = 'SSD Part Quantity', fill = 'Customer Size', title = 'ISG SSD Quarterly Demand by Customer Size & LOB')
+
+# btcc_ssd_qty %>% 
+#   group_by(LOB_DESC, Fiscal_Mo, SSD_Volume_Group) %>% 
+#   summarise(n_cust = n_distinct(Customer),
+#             y = sum(PART_QTY)) %>% 
+#   mutate(SSD_Volume_Group = factor(SSD_Volume_Group, levels = c('Small', 'Medium', 'Large','Strategic'))) %>%
+#   # filter(Fiscal_Qtr < 'FY19Q2') %>% 
+#   ggplot(aes(x = Fiscal_Mo, y = y, color = SSD_Volume_Group)) + 
+#   facet_wrap(~LOB_DESC, ncol = 1, scales = 'free_y') +
+#   geom_line(aes(group = SSD_Volume_Group), size = 1.5) +
+#   geom_point(aes(group = SSD_Volume_Group), size = 2) +
+#   geom_vline(xintercept = c(12.5, 24.5), color = '#444444', linetype = 2) +
+#   scale_x_discrete(breaks = c('FY17M01', 'FY17M04','FY17M07','FY17M10',
+#                               'FY18M01', 'FY18M04','FY18M07','FY18M10',
+#                               'FY19M01', 'FY19M04')) +
+#   scale_color_tableau('tableau10medium') +
+#   scale_y_continuous(labels = scales::comma) +
+#   theme_minimal() +
+#   theme(legend.position = 'bottom', axis.text = element_text(size = 8), 
+#         legend.text = element_text(size = 8), legend.title = element_text(size = 8)) +
+#   guides(fill = guide_legend(nrow = 1)) +
+#   labs(x = '', y = 'SSD Part Quantity', fill = 'Customer Size', title = 'ISG SSD Monthly Demand by Customer Size & LOB')
+
+
+btcc_ssd_qty %>% 
+  # filter(SSD_Volume_Group == 'Strategic Large Business') %>% 
+  mutate(Fiscal_Yr = substr(Fiscal_Qtr,1,4)) %>% 
+  filter(Fiscal_Yr >= 'FY18') %>% 
+  group_by(LOB_DESC, SSD_Volume_Group, Customer) %>% 
+  summarise(FY19_SSD_QTY = sum(PART_QTY)) %>% 
+  group_by(LOB_DESC) %>% 
+  mutate(FY19_SSD_Share = FY19_SSD_QTY / sum(FY19_SSD_QTY)) %>% 
+  arrange(LOB_DESC, desc(FY19_SSD_Share)) %>% 
+  top_n(5, FY19_SSD_Share) %>% 
+  rename(SSD_Volume_Group = SSD_Volume_Group) %>% 
+  writexl::write_xlsx('FY19 Top 5 SSD customers.xlsx')
+
+```
+
+```{r create_customer_features}
+library(moments)
+## Small & Strategic business are separate groups by themselves, not in clusters
+## weekly demand data for Medium & Large business customers
+# cust_wk_demand = cust_ssd_seg %>% 
+#   filter(!SSD_Volume_Group %in% c('Small', 'Strategic')) %>% 
+#   group_by(Customer, SSD_Volume_Group, Avg_Qtr_SSD_QTY) %>% 
+#   expand(Fiscal_Wk_End_Date = wk_list$Fiscal_Wk_End_Date) %>% 
+#   left_join(
+#     ### customer SSD weekly demand
+#     btcc_ssd_qty %>% 
+#       group_by(Customer, Fiscal_Wk_End_Date) %>% 
+#       summarise(PART_QTY = sum(PART_QTY), SYS_QTY = sum(SYS_QTY)), by = c('Customer', 'Fiscal_Wk_End_Date')
+#   ) %>% 
+#   left_join(
+#     ### customer system weekly demand
+#     btcc_sys_qty %>% 
+#       group_by(Customer, Fiscal_Wk_End_Date) %>% 
+#       summarise(SYS_QTY_ALL = sum(SYS_QTY), NUM_QTE_ALL = sum(NUM_QTE)), by = c('Customer', 'Fiscal_Wk_End_Date')
+#   ) %>% 
+#   mutate(PART_QTY = coalesce(PART_QTY, 0),
+#          SYS_QTY = coalesce(SYS_QTY, 0),
+#          SYS_QTY_ALL = coalesce(SYS_QTY_ALL, 0),
+#          NUM_QTE_ALL = coalesce(NUM_QTE_ALL, 0)) %>% 
+#   ## Attach rate are calculate differently, one based on overall system volume, another based on orders that have SSD on it
+#   mutate(SSD_Attach_All = PART_QTY / SYS_QTY_ALL,
+#          SSD_Attach = PART_QTY / SYS_QTY) %>% 
+#   mutate(SSD_Attach_All = coalesce(SSD_Attach_All, 0),
+#          SSD_Attach_All = if_else(is.infinite(SSD_Attach_All), 0, SSD_Attach_All),
+#          SSD_Attach = coalesce(SSD_Attach, 0),
+#          SSD_Attach = if_else(is.infinite(SSD_Attach), 0, SSD_Attach))
+# 
+# cust_cluster_data = cust_wk_demand %>% 
+#   group_by(Customer, SSD_Volume_Group, Avg_Qtr_SSD_QTY) %>% 
+#   summarise(max_wk_demand = max(PART_QTY),
+#             mean_wk_demand = mean(PART_QTY),
+#             med_wk_demand = median(PART_QTY),
+#             p_wk_w_demand = sum(PART_QTY != 0) / n_distinct(Fiscal_Wk_End_Date),
+#             qtle_wk_25_demand = quantile(PART_QTY, 0.25),
+#             qtle_wk_75_demand = quantile(PART_QTY, 0.75),
+#             qtle_wk_90_demand = quantile(PART_QTY, 0.9),
+#             sd_wk_demand = sd(PART_QTY),
+#             kurtosis_wk_demand = kurtosis(PART_QTY),
+#             peak_wk_demand = Fiscal_Wk_End_Date[which(PART_QTY == max(PART_QTY))][1],
+#             max_wk_attach = max(SSD_Attach_All),
+#             min_wk_attach = min(SSD_Attach_All),
+#             mean_wk_attach = mean(SSD_Attach_All),
+#             med_wk_attach = median(SSD_Attach_All),
+#             qtle_wk_25_attach = quantile(SSD_Attach_All, 0.25),
+#             qtle_wk_75_attach = quantile(SSD_Attach_All, 0.75),
+#             qtle_wk_90_attach = quantile(SSD_Attach_All, 0.9),
+#             sd_wk_attach = sd(SSD_Attach_All),
+#             kurtosis_wk_attach = kurtosis(SSD_Attach_All),
+#             peak_wk_attach = Fiscal_Wk_End_Date[which(SSD_Attach_All == max(SSD_Attach_All))][1],
+#             max_wk_qte = max(NUM_QTE_ALL),
+#             mean_wk_qte = mean(NUM_QTE_ALL),
+#             med_wk_qte = median(NUM_QTE_ALL),
+#             qtle_wk_75_qte = quantile(NUM_QTE_ALL, 0.75),
+#             qtle_wk_90_qte = quantile(NUM_QTE_ALL, 0.9)) %>% 
+#   as.data.frame()
+# 
+# cust_cluster_data = cust_cluster_data %>% 
+#   left_join(wk_list, by = c('peak_wk_demand' = 'Fiscal_Wk_End_Date')) %>%
+#   select(-peak_wk_demand) %>% 
+#   rename(peak_wk_demand = Fiscal_Wk) %>% 
+#   mutate(peak_wk_demand = as.integer(substr(peak_wk_demand, 6, 8))) %>% 
+#   left_join(wk_list, by = c('peak_wk_attach' = 'Fiscal_Wk_End_Date')) %>%
+#   select(-peak_wk_attach) %>% 
+#   rename(peak_wk_attach = Fiscal_Wk) %>% 
+#   mutate(peak_wk_attach = as.integer(substr(peak_wk_attach, 6, 8)))
+# 
+# head(cust_cluster_data)
+
+## Monthly demand data for Medium & Large business customers
+cust_mo_demand = cust_ssd_seg %>% 
+  filter(!SSD_Volume_Group %in% c('Small', 'Strategic')) %>% 
+  group_by(Customer, SSD_Volume_Group, Avg_Qtr_SSD_QTY, first_order_yr) %>% 
+  expand(Fiscal_Mo = mo_list$Fiscal_Mo) %>% 
+  left_join(
+    ### customer SSD monthly demand
+    btcc_ssd_qty %>% 
+      group_by(Customer, Fiscal_Mo) %>% 
+      summarise(PART_QTY = sum(PART_QTY)), by = c('Customer', 'Fiscal_Mo')
+  ) %>% 
+  left_join(
+    ### customer system monthly demand
+    btcc_sys_qty %>% 
+      group_by(Customer, Fiscal_Mo) %>% 
+      summarise(SYS_QTY_ALL = sum(SYS_QTY), NUM_QTE_ALL = sum(NUM_QTE)), by = c('Customer', 'Fiscal_Mo')
+  ) %>% 
+  mutate(PART_QTY = coalesce(PART_QTY, 0),
+         SYS_QTY_ALL = coalesce(SYS_QTY_ALL, 0),
+         NUM_QTE_ALL = coalesce(NUM_QTE_ALL, 0)) %>% 
+  ## Attach rate are based on overall system volume
+  mutate(SSD_Attach_All = PART_QTY / SYS_QTY_ALL) %>% 
+  mutate(SSD_Attach_All = coalesce(SSD_Attach_All, 0),
+         SSD_Attach_All = if_else(is.infinite(SSD_Attach_All), 0, SSD_Attach_All))
+
+
+cust_cluster_data = cust_mo_demand %>% 
+  group_by(Customer, SSD_Volume_Group, Avg_Qtr_SSD_QTY, first_order_yr) %>% 
+  summarise(
+    ## demand
+    max_mo_demand = max(PART_QTY),
+    mean_mo_demand = mean(PART_QTY),
+    med_mo_demand = median(PART_QTY),
+    qtle_mo_75_demand = quantile(PART_QTY, 0.75),
+    sd_mo_demand = sd(PART_QTY),
+    kurtosis_mo_demand = kurtosis(PART_QTY),
+    peak_mo_demand = substr(Fiscal_Mo[which(PART_QTY == max(PART_QTY))][1],5,7),
+    p_mo_w_demand = sum(PART_QTY != 0) / n_distinct(Fiscal_Mo),
+    p_mo_over_med_demand = sum(PART_QTY > med_mo_demand) / n_distinct(Fiscal_Mo),
+    p_mo_over_75_qtle_demand = sum(PART_QTY > qtle_mo_75_demand) / n_distinct(Fiscal_Mo),
+    # peak_mo_demand = as.integer(substr(peak_mo_demand, 6, 8)),
+    ## attach rate
+    max_mo_attach = max(SSD_Attach_All),
+    min_mo_attach = min(SSD_Attach_All),
+    mean_mo_attach = mean(SSD_Attach_All),
+    med_mo_attach = median(SSD_Attach_All),
+    qtle_mo_75_attach = quantile(SSD_Attach_All, 0.75),
+    sd_mo_attach = sd(SSD_Attach_All),
+    kurtosis_mo_attach = kurtosis(SSD_Attach_All),
+    peak_mo_attach = substr(Fiscal_Mo[which(SSD_Attach_All == max(SSD_Attach_All))][1],5,7),
+    p_mo_over_med_attach = sum(SSD_Attach_All > med_mo_attach) / n_distinct(Fiscal_Mo),
+    p_mo_over_75_qtle_attach = sum(SSD_Attach_All > qtle_mo_75_attach) / n_distinct(Fiscal_Mo),
+    # peak_mo_attach = as.integer(substr(peak_mo_attach, 6, 8)),
+    ## number of quotes
+    max_mo_qte = max(NUM_QTE_ALL),
+    mean_mo_qte = mean(NUM_QTE_ALL),
+    med_mo_qte = median(NUM_QTE_ALL),
+    qtle_mo_75_qte = quantile(NUM_QTE_ALL, 0.75),
+    peak_mo_qte = substr(Fiscal_Mo[which(NUM_QTE_ALL == max(NUM_QTE_ALL))][1],5,7),
+    p_mo_over_med_qte = sum(NUM_QTE_ALL > med_mo_qte) / n_distinct(Fiscal_Mo),
+    p_mo_over_75_qtle_qte = sum(NUM_QTE_ALL > qtle_mo_75_qte) / n_distinct(Fiscal_Mo)) %>% 
+  as.data.frame()
+
+## Quarterly demand data for Medium & Large business customers
+cust_qtr_demand = cust_ssd_seg %>% 
+  filter(!SSD_Volume_Group %in% c('Small', 'Strategic')) %>% 
+  group_by(Customer) %>% 
+  expand(Fiscal_Qtr = qtr_list$Fiscal_Qtr) %>% 
+  left_join(
+    ### customer SSD weekly demand
+    btcc_ssd_qty %>% 
+      group_by(Customer, Fiscal_Qtr) %>% 
+      summarise(PART_QTY = sum(PART_QTY)), by = c('Customer', 'Fiscal_Qtr')
+  ) %>% 
+  left_join(
+    ### customer system weekly demand
+    btcc_sys_qty %>% 
+      group_by(Customer, Fiscal_Qtr) %>% 
+      summarise(SYS_QTY_ALL = sum(SYS_QTY), NUM_QTE_ALL = sum(NUM_QTE)), by = c('Customer', 'Fiscal_Qtr')
+  ) %>% 
+  mutate(PART_QTY = coalesce(PART_QTY, 0),
+         SYS_QTY_ALL = coalesce(SYS_QTY_ALL, 0),
+         NUM_QTE_ALL = coalesce(NUM_QTE_ALL, 0)) %>% 
+  ## Attach rate are calculate differently, one based on overall system volume, another based on orders that have SSD on it
+  mutate(SSD_Attach_All = PART_QTY / SYS_QTY_ALL) %>% 
+  mutate(SSD_Attach_All = coalesce(SSD_Attach_All, 0),
+         SSD_Attach_All = if_else(is.infinite(SSD_Attach_All), 0, SSD_Attach_All))
+
+
+cust_cluster_data = cust_cluster_data %>% 
+  left_join(
+    cust_qtr_demand %>% 
+      group_by(Customer) %>% 
+      summarise(
+        ## demand
+        max_qtr_demand = max(PART_QTY),
+        mean_qtr_demand = mean(PART_QTY),
+        med_qtr_demand = median(PART_QTY),
+        qtle_qtr_75_demand = quantile(PART_QTY, 0.75),
+        sd_qtr_demand = sd(PART_QTY),
+        kurtosis_qtr_demand = kurtosis(PART_QTY),
+        peak_qtr_demand = substr(Fiscal_Qtr[which(PART_QTY == max(PART_QTY))][1],5,7),
+        p_qtr_w_demand = sum(PART_QTY != 0) / n_distinct(Fiscal_Qtr),
+        p_qtr_over_med_demand = sum(PART_QTY > med_qtr_demand) / n_distinct(Fiscal_Qtr),
+        p_qtr_over_75_qtle_demand = sum(PART_QTY > qtle_qtr_75_demand) / n_distinct(Fiscal_Qtr),
+        # peak_qtr_demand = as.integer(substr(peak_qtr_demand, 6, 8)),
+        ## attach rate
+        max_qtr_attach = max(SSD_Attach_All),
+        min_qtr_attach = min(SSD_Attach_All),
+        mean_qtr_attach = mean(SSD_Attach_All),
+        med_qtr_attach = median(SSD_Attach_All),
+        qtle_qtr_75_attach = quantile(SSD_Attach_All, 0.75),
+        sd_qtr_attach = sd(SSD_Attach_All),
+        kurtosis_qtr_attach = kurtosis(SSD_Attach_All),
+        peak_qtr_attach = substr(Fiscal_Qtr[which(SSD_Attach_All == max(SSD_Attach_All))][1],5,7),
+        p_qtr_over_med_attach = sum(SSD_Attach_All > med_qtr_attach) / n_distinct(Fiscal_Qtr),
+        p_qtr_over_75_qtle_attach = sum(SSD_Attach_All > qtle_qtr_75_attach) / n_distinct(Fiscal_Qtr),
+        # peak_qtr_attach = as.integer(substr(peak_qtr_attach, 6, 8)),
+        ## number of quotes
+        max_qtr_qte = max(NUM_QTE_ALL),
+        mean_qtr_qte = mean(NUM_QTE_ALL),
+        med_qtr_qte = median(NUM_QTE_ALL),
+        qtle_qtr_75_qte = quantile(NUM_QTE_ALL, 0.75),
+        peak_qtr_qte = substr(Fiscal_Qtr[which(NUM_QTE_ALL == max(NUM_QTE_ALL))][1],5,7),
+        p_qtr_over_med_qte = sum(NUM_QTE_ALL > med_qtr_qte) / n_distinct(Fiscal_Qtr),
+        p_qtr_over_75_qtle_qte = sum(NUM_QTE_ALL > qtle_qtr_75_qte) / n_distinct(Fiscal_Qtr)) %>% 
+      as.data.frame(), by = 'Customer')
+
+## remove columns with all 0 or the same values
+all_0_col = which(apply(cust_cluster_data, 2, function(x) sum(x == 0) == nrow(cust_cluster_data)))
+all_same_col = which(apply(cust_cluster_data, 2, function(x) sum(x == min(x)) == nrow(cust_cluster_data)))
+if (length(c(all_0_col, all_same_col)) > 0){
+  cust_cluster_data = cust_cluster_data[,-c(all_0_col, all_same_col)]
+}
+
+```
+
+
+```{r k_means_clustering}
+library(dummies)
+library(Rtsne)
+library(caret)
+library(randomForest)
+library(rpart)
+library(xgboost)
+library(dbscan)
+library(tabplot)
+library(ggthemes)
+
+# dummy_df = dummy.data.frame(cust_cluster_data %>% select(-Customer))
+# cluster_df = bind_cols(cust_cluster_data %>% select(Customer), dummy_df)
+
+# which(apply(cust_cluster_data, 2, function(x) sum(is.na(x))) != 0)
+# cust_cluster_data[is.na(cust_cluster_data)] = 0
+# 
+# which(apply(cust_cluster_data, 2, function(x) sum(is.na(sd(x)))) != 0)
+
+######### data pre-processing ##########
+chr_cols = setdiff(names(which(sapply(cust_cluster_data,class) == "character")), c("Customer"))
+# num_cols = names(which(sapply(cust_cluster_data,class) != "character"))
+num_cols = setdiff(names(which(sapply(cust_cluster_data,class) != "character")), "Avg_Qtr_SSD_QTY")
+
+dummy_df_norm = as.data.frame(scale(cust_cluster_data %>% select_(.dots = as.list(num_cols)), center = F))
+dummy_df_norm = bind_cols(dummy_df_norm, dummy.data.frame(cust_cluster_data %>% select_(.dots = as.list(chr_cols))))
+
+which(apply(dummy_df_norm, 2, function(x) sum(is.na(x))) != 0)
+# summary(cust_cluster_data)
+
+######### K means ##########
+kmeans_metric = tibble(k = numeric(0),bet = numeric(0), within = numeric(0))
+for (k in 3:15){
+  set.seed(42)
+  tmp_cluster_kmeans = kmeans(dummy_df_norm, centers = k)
+  tmp_result = tibble(k = k, bet = tmp_cluster_kmeans$betweenss, within = tmp_cluster_kmeans$tot.withinss)
+  kmeans_metric = bind_rows(kmeans_metric, tmp_result)
+}
+
+kmeans_metric = kmeans_metric %>% 
+  mutate(bet_scaled = scale(bet, center = F)) %>% 
+  mutate(in_scaled = scale(within, center = F))
+
+ggplot(data = kmeans_metric, aes(x = k)) +
+  geom_line(aes(y = bet_scaled, color = 'Between')) +
+  geom_point(aes(y = bet_scaled, color = 'Between')) +
+  # geom_vline(xintercept = 8, color = '#007DB8') +
+  scale_x_continuous(breaks = seq(4,16,2)) +
+  theme_minimal()
+
+ggplot(data = kmeans_metric, aes(x = k)) +
+  geom_line(aes(y = in_scaled, color = 'Within')) +
+  geom_point(aes(y = in_scaled, color = 'Within')) +
+  scale_x_continuous(breaks = seq(4,16,2)) +
+  theme_minimal()
+
+```
+
+```{r clustering_result_analysis}
+# Decide Cluster Number
+optimal_k = 8
+set.seed(42)
+cluster_kmeans = kmeans(dummy_df_norm, centers = optimal_k)
+
+result_df_dummy = dummy_df_norm %>% as.data.frame() %>% mutate(cluster = cluster_kmeans$cluster)
+result_df = cust_cluster_data %>% mutate(cluster = cluster_kmeans$cluster)
+
+# run Rtsne with default parameters
+rtsne_out <- Rtsne(as.matrix(dummy_df_norm))
+
+# plot clustering result
+plot_kmeans = data.frame(rtsne_x = rtsne_out$Y[,1], rtsne_y = rtsne_out$Y[,2], cluster = as.factor(cluster_kmeans$cluster))
+ggplot(data = plot_kmeans, aes(x = rtsne_x, y = rtsne_y, color = cluster)) +
+  geom_point(aes(group = cluster)) +
+  scale_color_tableau() +
+  theme_minimal() +
+  theme(axis.text = element_blank(), axis.title = element_blank()) +
+  labs(title = 'K-means Clustering on SSD Medium & Large Business', color = 'Cluster')
+
+fit_xgb = xgboost(xgb.DMatrix(data = as.matrix(dummy_df_norm), label = (cluster_kmeans$cluster-1)),
+                  nround = 10, # max number of boosting iterations
+                  objective = "multi:softmax", num_class=optimal_k)
+imp_xgb = xgb.importance(model = fit_xgb) %>% 
+  top_n(10, Gain)
+imp_xgb 
+
+result_df %>% 
+  group_by(cluster) %>% 
+  summarise(n_cust = n(),
+            Total_SSD = sum(Avg_Qtr_SSD_QTY),
+            Avg_Cust_SSD = mean(Avg_Qtr_SSD_QTY),
+            mean_qtr_attach = mean(mean_qtr_attach),
+            p_mo_w_demand = mean(p_mo_w_demand),
+            mean_mo_attach = mean(mean_mo_attach),
+            med_qtr_attach = mean(med_qtr_attach),
+            sd_qtr_attach = mean(sd_qtr_attach))
+
+plot_feature = c("p_mo_w_demand", "peak_qtr_demand", "mean_mo_attach", "med_qtr_attach", "mean_mo_qte")
+
+tableplot(result_df %>% 
+            mutate(cluster = factor(cluster)), 
+          select_string = c('cluster', 'Avg_Qtr_SSD_QTY', plot_feature), sortCol = 'cluster', scales = "lin",
+          pals = list(tableau_color_pal('tableau20')(20)))
+
+result_df %>% 
+  distinct(Customer, cluster) %>%
+  left_join(cust_mo_demand %>% 
+              group_by(Customer) %>% 
+              summarise(SSD_Attach = sum(PART_QTY) / sum(SYS_QTY_ALL),
+                        Avg_Qtr_SSD_QTY = mean(Avg_Qtr_SSD_QTY),
+                        PART_QTY = sum(PART_QTY)), by = c('Customer')) %>% 
+  group_by(cluster) %>% 
+  summarise(N_Customer = n_distinct(Customer),
+            Avg_SSD_Attach = mean(SSD_Attach),
+            Avg_Qtr_SSD_QTY = mean(Avg_Qtr_SSD_QTY),
+            PART_QTY = sum(PART_QTY)) %>% 
+  mutate(PART_PTG = PART_QTY / sum(btcc_ssd_qty$PART_QTY))
+
+result_df %>% 
+  left_join(cust_mo_demand %>% 
+              group_by(Customer) %>% 
+              summarise(PART_QTY = sum(PART_QTY)), by = c('Customer')) %>% 
+  group_by(cluster) %>% 
+  summarise(N_Customer = n_distinct(Customer),
+            Avg_Qtr_SSD_QTY = mean(Avg_Qtr_SSD_QTY),
+            PART_QTY = sum(PART_QTY),
+            p_mo_w_demand = mean(p_mo_w_demand),
+            mean_mo_attach = mean(mean_mo_attach),
+            med_qtr_attach = mean(med_qtr_attach),
+            mean_mo_qte = mean(mean_mo_qte),
+            peak_qtr_demand = names(sort(table(peak_qtr_demand), decreasing = T)[1])) %>% 
+  mutate(PART_PTG = PART_QTY / sum(btcc_ssd_qty$PART_QTY)) %>% 
+  select(-PART_QTY) %>% 
+  writexl::write_xlsx('Cluster Summary.xlsx')
+  
+result_df %>% 
+  distinct(Customer, cluster) %>% 
+  left_join(cust_qtr_demand, by = c('Customer')) %>% 
+  group_by(Fiscal_Qtr, cluster) %>% 
+  summarise(PART_QTY = sum(PART_QTY), SYS_QTY_ALL = sum(SYS_QTY_ALL), NUM_QTE_ALL = sum(NUM_QTE_ALL)) %>% 
+  reshape2::melt(id.vars = c('Fiscal_Qtr', 'cluster')) %>% 
+  mutate(cluster = factor(cluster)) %>% 
+  ggplot(aes(x = Fiscal_Qtr, y = value, fill = cluster)) +
+  facet_wrap(~variable, ncol = 1, scales = 'free_y') +
+  # geom_line(aes(group = cluster), size = 1) +
+  geom_bar(aes(group = cluster), stat = 'identity') +
+  scale_fill_tableau('tableau20')
+
+
+```
+
+```{r demo_forecast}
+
+
+a = cust_wk_demand %>% 
+  group_by(Fiscal_Wk_End_Date) %>% 
+  summarise(y = sum(PART_QTY)) %>% 
+  rename(ds = Fiscal_Wk_End_Date) %>% 
+  as.data.frame()
+
+library(prophet)
+train_set = a %>% filter(ds <= '2018-02-03')
+test_set = a %>% filter(ds > '2018-02-03' & ds < '2018-05-05')
+
+prophet.fit = prophet(train_set, yearly.seasonality = TRUE)
+
+future = data.frame(ds = test_set$ds)
+
+forecast = predict(prophet.fit, future)
+
+b = train_set %>% full_join(forecast %>% mutate(ds = as.character(ds)) %>% select(ds, yhat, yhat_lower, yhat_upper))
+
+ggplot(b, aes(x = ds)) +
+  geom_line(aes(y = y, group = 1), color = '#444444', size = 1.5) +
+  geom_ribbon(aes(ymin = yhat_lower, ymax = yhat_upper, group = 3), fill = '#00BBF0', alpha = 0.3) +
+  geom_line(aes(y = yhat,  group = 2), color = '#007DB8', size = 1.5) +
+  scale_x_discrete(breaks = c('2016-02-05', '2017-02-03', '2018-02-09')) +
+  theme_minimal() +
+  labs(x = '', y = 'SSD Part Quantity')
+
+
+```
+
+
+```{r cluster_time_series}
+
+btcc_ssd_cust = btcc_ssd_qty %>% 
+  filter(SSD_Volume_Group != 'Small Business') %>% 
+  group_by(LOB_DESC, Customer, SSD_Volume_Group, Fiscal_Wk_End_Date) %>% 
+  summarize(y = sum(PART_QTY)) %>% 
+  arrange(Customer, Fiscal_Wk_End_Date) %>% 
+  ungroup() 
+
+a = btcc_ssd_qty %>% 
+  # filter(SSD_Volume_Group != 'Small Business') %>% 
+  group_by(LOB_DESC, Customer, SSD_Volume_Group, Fiscal_Mo) %>% 
+  summarise(y = sum(PART_QTY)) %>% 
+  ungroup() %>% 
+  group_by(LOB_DESC, Customer, SSD_Volume_Group) %>% 
+  summarise(n_mo = n_distinct(Fiscal_Mo), y = sum(y)) %>% 
+  mutate(ord_freq = n_mo / 28)
+# mutate(ord_freq = case_when(
+#   n_mo <= 2 ~ 'Sporadic Demand Customer',
+#   n_mo > 2 & n_mo <= 20 ~ 'Less-Consistent Demand Customer',
+#   n_mo > 20 ~ 'Consistent Demand Customer')) %>% 
+# group_by(LOB_DESC, SSD_Volume_Group, ord_freq) %>% 
+# summarise(n_c = n_distinct(Customer), y = sum(y)) %>% 
+# mutate(ptg = y/sum(y))
+a %>% 
+  mutate(SSD_Volume_Group = factor(SSD_Volume_Group, levels = c('Small Business', 'Medium Business', 'Large Business','Strategic Large Business'))) %>% 
+  ggplot(aes(x = LOB_DESC, y = ord_freq, fill = SSD_Volume_Group)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_fill_tableau('tableau10medium') +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(x = '', y = 'Annual Customer Order Frequency', fill = 'Customer Size', title = 'ISG SSD Annual Customer Order Frequency by LOB')
+
+
+
+target_cust = btcc_ssd_qty %>% 
+  filter(SSD_Volume_Group != 'Small Business') %>% 
+  distinct(LOB_DESC, Customer) 
+# arrange(desc(y))
+
+
+
+cust_cluster_data = target_cust  %>% 
+  group_by(LOB_DESC, Customer) %>% 
+  expand(Fiscal_Wk_End_Date = wk_list$Fiscal_Wk_End_Date) %>% 
+  left_join(btcc_ssd_cust, by = c("LOB_DESC", "Customer", "Fiscal_Wk_End_Date")) %>% 
+  mutate(y = coalesce(y, 0)) %>% 
+  mutate(scaled_y = (y - min(y)) / (max(y) - min(y))) %>% 
+  select(-Fiscal_Wk_End_Date, -y) %>% 
+  as.data.frame()
+
+#### Create list of trajectories for each LOB #### 
+lob_list = unique(btcc_ssd_cust$LOB_DESC)
+
+custTraj = list()
+
+for (lob in lob_list){
+  
+  for (cust in subset(target_cust, LOB_DESC == lob)$Customer){
+    
+    tmp_traj = filter(cust_cluster_data, LOB_DESC == lob & Customer == cust)$scaled_y
+    custTraj[[lob]][[cust]] = tmp_traj
+    rm(tmp_traj)
+  }
+}
+
+
+#### Run dtw clustering for each lob to find optimal cluster number #### 
+t1 = Sys.time()
+k.list = 2:15
+dist.list = list()
+
+for (lob in lob_list){
+  
+  pc <- tsclust(custTraj[[lob]], type = "partitional", k = k.list, 
+                distance = "dtw_basic", centroid = "pam", 
+                seed = 3247L, trace = F,
+                # control = partitional_control(nrep = 10L),
+                args = tsclust_args(dist = list(window.size = 13L))
+  )
+  
+  # avg_dist = mean(sapply(pc, function(x) mean(x@clusinfo$av_dist)))
+  # avg_dist = mean(pc@clusinfo$av_dist)
+  ###  Modified Davies-Bouldin index (DB*)
+  dist.list[[lob]] = sapply(pc, cvi, type = "Sil", USE.NAMES = F)
+  rm(pc)
+}
+
+Sys.time() - t1
+
+
+ggplot(data = tibble(lob = rep(lob_list, each = length(k.list)), k = rep(k.list, 4), dist = unlist(dist.list, use.names = F))) +
+  facet_wrap(~lob) +
+  geom_line(aes(x = k, y = dist), size = 1.5) +
+  geom_point(aes(x = k, y = dist), size = 3) +
+  # geom_vline(aes(xintercept = 6), color = '#00BBF0', linetype="dashed", size=1.5) +
+  scale_x_continuous(breaks = k.list) + 
+  labs(title = 'Silhouette index',x = 'Number of Clusters', y = 'Avg Distance within Clusters') +
+  theme_minimal()
+
+
+# optimal k
+optimal_k = list()
+optimal_k[['Cloud Products']] = 4
+optimal_k[['PowerEdge']] = 3
+optimal_k[['PowerEdge - ESI']] = 3
+optimal_k[['Storage - DELL']] = 5
+
+
+cluster_output = list()
+for (lob in lob_list){
+  cluster_output[[lob]] <- tsclust(custTraj[[lob]], type = "partitional", k = optimal_k[[lob]], 
+                                   distance = "dtw_basic", centroid = "pam", 
+                                   seed = 3247L, trace = F,
+                                   args = tsclust_args(dist = list(window.size = 26L))
+  )
+}
+
+# plot(pc)
+plot(cluster_output[['Cloud Products']], type = 'centroids')
+plot(cluster_output[['PowerEdge']], type = 'centroids')
+# plot(cluster_output[['PowerEdge']])
+plot(cluster_output[['PowerEdge - ESI']], type = 'centroids')
+plot(cluster_output[['Storage - DELL']], type = 'centroids')
+
+
+for (lob in lob_list){
+  print(lob)
+  print(cluster_output[[lob]]@clusinfo)
+}
+
+cluster_result = tibble(LOB_DESC = character(0), Customer = character(0), cluster = integer(0))
+for (lob in lob_list){
+  cluster_result = bind_rows(cluster_result, tibble(LOB_DESC = lob, Customer = names(custTraj[[lob]]), cluster = cluster_output[[lob]]@cluster))
+}
+
+# cluster_result %>% 
+#   group_by(LOB_DESC) %>% 
+#   mutate(rank = row_number()) %>% 
+#   filter(cluster == 2)
+
+## customer infos with cluster number
+cust_metric_data = cluster_result %>% 
+  left_join(
+    ## generic customer metric
+    btcc_ssd_cust %>% 
+      filter(Customer %in% target_cust$Customer) %>% 
+      group_by(LOB_DESC, Customer) %>% 
+      summarise(
+        total_qty = sum(y),
+        wk_max = max(y),
+        wk_mean = mean(y),
+        wk_median = median(y),
+        wk_sd_ptg = sd(y) / wk_mean,
+        ptg_wk_has_demand = sum(y > 0) / 120,
+        peak_wk = max(which(y == wk_max)),
+        peak_wk = peak_wk %% 52,
+        peak_wk = ifelse(peak_wk == 0, 52, peak_wk)), by = c('LOB_DESC', 'Customer')) %>% 
+  left_join(
+    ## which brand has largest demand
+    btcc_ssd_qty %>%
+      filter(Customer %in% target_cust$Customer) %>%
+      group_by(Customer, LOB_DESC, BRAND_CATG_DESC) %>%
+      summarise(y = sum(PART_QTY)) %>%
+      ungroup() %>%
+      group_by(Customer, LOB_DESC) %>%
+      mutate(ptg = y / sum(y)) %>%
+      filter(y == max(y)) %>%
+      rename(main_brand = BRAND_CATG_DESC, main_brand_ssd_qty = y, main_brand_ssd_ptg = ptg), by = c('LOB_DESC', 'Customer')) %>%
+  left_join(
+    ## which quarter has largest demand
+    btcc_ssd_qty %>% 
+      filter(Customer %in% target_cust$Customer) %>% 
+      mutate(Qtr = substr(Fiscal_Qtr, 5,6)) %>% 
+      group_by(Customer, LOB_DESC, Qtr) %>% 
+      summarise(y = sum(PART_QTY)) %>% 
+      ungroup() %>% 
+      group_by(Customer, LOB_DESC) %>% 
+      mutate(ptg = y / sum(y)) %>% 
+      filter(y == max(y)) %>% 
+      rename(peak_qtr = Qtr, peak_qtr_qty = y, peak_qtr_ptg = ptg), by = c('LOB_DESC', 'Customer')
+  ) %>% 
+  left_join(
+    btcc_ssd_qty %>% 
+      filter(Customer %in% target_cust$Customer) %>% 
+      group_by(Customer, LOB_DESC) %>% 
+      summarise(customer_attach = sum(PART_QTY) / sum(SYS_QTY)), by = c('LOB_DESC', 'Customer')
+  )
+
+
+
+## Cluster summary
+cluster_summary = cust_metric_data %>% 
+  group_by(LOB_DESC, cluster) %>% 
+  summarise(cluster_qty = sum(total_qty),
+            avg_cust_annual_qty = round(mean(total_qty * 52 / 120)),
+            avg_cust_attach = mean(customer_attach), 
+            members = n_distinct(Customer)) %>% 
+  # bind_rows(
+  #   btcc_ssd_qty %>% 
+  #     filter(!(Customer %in% target_cust$Customer) & Customer != 'Unknown_Customer') %>% 
+  #     group_by(LOB_DESC) %>% 
+  #     summarise(cluster_qty = sum(PART_QTY),
+  #               members = n_distinct(Customer),
+  #               avg_cust_attach = sum(PART_QTY) / sum(SYS_QTY)) %>% 
+  #     mutate(avg_cust_annual_qty = round((cluster_qty * 52 / 120) / members),
+  #            cluster = 0)
+  # ) %>% 
+  # bind_rows(
+#   btcc_ssd_qty %>% 
+#     filter(Customer == 'Unknown_Customer') %>% 
+#     group_by(LOB_DESC) %>% 
+#     summarise(cluster_qty = sum(PART_QTY),
+#               members = n_distinct(Customer),
+#               avg_cust_attach = sum(PART_QTY) / sum(SYS_QTY)) %>% 
+#     mutate(avg_cust_annual_qty = NA,
+#            cluster = -1)
+# ) %>% 
+arrange(LOB_DESC, cluster) %>% 
+  group_by(LOB_DESC) %>% 
+  mutate(cluster_ptg = cluster_qty / sum(cluster_qty)) %>% 
+  ungroup()
+
+# Create the function.
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+
+cluster_summary %>% 
+  left_join(
+    cust_metric_data %>% 
+      group_by(LOB_DESC, cluster) %>% 
+      summarise(wkly_mean = mean(wk_mean),
+                wk_sd_mean = mean(wk_sd_ptg, na.rm =T),
+                ptg_wk_has_demand_mean = mean(ptg_wk_has_demand),
+                main_brand_ssd_ptg_mean = mean(main_brand_ssd_ptg),
+                peak_qtr = getmode(peak_qtr)), by = c('LOB_DESC', 'cluster')) %>% 
+  as.data.frame() %>% 
+  View()
+# writexl::write_xlsx('Cluster Summary.xlsx')
+
+
+
+cust_metric_data %>% 
+  arrange(desc(total_qty))
+
+## identify region for each customer
+cust_region = btcc_ssd_qty %>% 
+  filter(Customer %in% top_cust$Customer) %>%
+  group_by(Customer, RGN_DESC) %>% 
+  summarise(y = sum(PART_QTY)) %>% 
+  filter(y == max(y)) %>% 
+  filter(RGN_DESC == max(RGN_DESC)) %>%  # DEUTSCHE BANK AG has same quantity in APJ and EMEA
+  distinct(Customer, RGN_DESC)
+
+cust_metric_data %>% 
+  left_join(cust_region, by = 'Customer') %>% 
+  group_by(LOB_DESC, cluster, RGN_DESC) %>% 
+  summarise(qty = sum(total_qty)) %>% 
+  mutate(ptg = qty/sum(qty)) %>% 
+  ggplot(aes(x = cluster, y = qty, fill = RGN_DESC)) +
+  facet_wrap(~LOB_DESC, scales = 'free') +
+  geom_bar(stat = 'identity') +
+  geom_text(aes(label = paste0(round(100*ptg), '%')), colour = 'white', fontface = 'bold',
+            size = 4, position = position_stack(vjust = .5)) + 
+  scale_fill_tableau() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = 'ISG SSD Demand by Clusters & Region', x = 'Cluster Number', y = 'SSD Part Quantity')
+
+
+## weekly average
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = wk_mean)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster), outlier.shape = NA) 
+
+## weekly standard deviation
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = wk_sd)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster), outlier.shape = NA) 
+
+## % weeks has demand
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = ptg_wk_has_demand)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster), outlier.shape = NA) 
+
+
+## peak quarter percentage of total
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = peak_qtr_ptg)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster), outlier.shape = NA) 
+
+## which week is the peak
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = peak_wk)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster)) 
+
+## see how diverse is their order portfolio
+cust_metric_data %>% 
+  ggplot(aes(x = cluster, y = main_brand_ssd_ptg)) +
+  facet_wrap(~LOB_DESC, scales = 'free', nrow = 1) +
+  geom_boxplot(aes(group = cluster)) 
+
+## percentage of weeks when having large order 
+
+```
+
