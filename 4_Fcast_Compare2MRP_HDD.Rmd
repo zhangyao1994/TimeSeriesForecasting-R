@@ -136,6 +136,8 @@ CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,ti
 CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
 write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
 
+read_feather("~/Yao_Rdata/CFG_fcast.feather")
+
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
   # calculate absolute percent error for MRP
@@ -335,5 +337,6 @@ colnames(APE.selected) <- c("CFG","Region",'MRP','Prophet','ARIMA','TBATS','lm',
 APE.selected$Selection <- apply(APE.selected,1,function(x) names(which.min(x[4:10])))
 APE.selected[c("Selection" )] <- lapply(APE.selected[c("Selection" )], function(x) as.factor(as.character(x)))
 write_feather(APE.selected,"~/Yao_Rdata/TestSelection.feather")
+APE.selected <- read_feather("~/Yao_Rdata/TestSelection.feather")
 ```
 

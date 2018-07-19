@@ -68,6 +68,8 @@ MAPE_CV.Table[c("Selection" )] <- lapply(MAPE_CV.Table[c("Selection" )], functio
 
 path <- "~/Yao_Rdata/MAPE_CV.wtSelection.feather"
 write_feather(MAPE_CV.Table, path)
+MAPE_CV.Table <- read_feather("~/Yao_Rdata/MAPE_CV.wtSelection.feather")
+write_excel_csv(MAPE_CV.Table,'temp.csv')
 
 # Attainment Rates
 Attainment_Rate_Cal <- function(x) {
@@ -226,6 +228,9 @@ APEresults_CV[c("Selection" )] <- lapply(APEresults_CV[c("Selection" )], functio
 
 path <- "~/Yao_Rdata/MAPE_CV.wtSelection4Qtr.feather"
 write_feather(APEresults_CV, path)
+
+# read the preference models
+APEresults_CV <- read_feather("~/Yao_Rdata/MAPE_CV.wtSelection4Qtr.feather")
 
 # Compare to the Test Region Selection
 select(APEresults_CV,CFG,Region) %>% left_join(TestSelection) %>% unique() -> temp
