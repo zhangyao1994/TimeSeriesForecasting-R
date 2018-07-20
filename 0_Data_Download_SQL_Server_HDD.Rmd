@@ -57,6 +57,7 @@ ORDER BY D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
 
 ```{r Deal with missing data}
 Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+# 7/20/2018 128 weeks
 
 apply(hdd_qty, 2, function(x) any(is.na(x)))
 
@@ -83,89 +84,20 @@ WHERE B.CFG LIKE '%HDD%' AND B.Commodity_Desc IN ('Hard Drive')--Verified with o
 GROUP BY [VERSION], MONWKYR, CFG, REGION, Commodity_Desc
 ```
 
-```{r}
+```{r Saved mrp_HDD data}
 #write_feather(mrp_data0,'~/Yao_Rdata/mrp_HDD.feather')
 mrp_data0 <- read_feather('~/Yao_Rdata/mrp_HDD.feather')
-
-mrp_data <- mrp_data0
-# Extract Month,Week,Year from MONWKYR in the MRP data
-mrp_data$MON <- substr(mrp_data$MONWKYR, start = 1, stop = 3)
-mrp_data$WK <- substr(mrp_data$MONWKYR, start = 5, stop = 5)
-mrp_data$FISC_YR <- substr(mrp_data$MONWKYR, start = 6, stop = 7)
-
-# Order them in the right time order
-mrp_data$YRMON <- paste(mrp_data$FISC_YR,mrp_data$MON)
-mrp_data %>% 
-  mutate(VERSION = factor(VERSION, levels = c("FY19Q2W5","FY19Q2W6","FY19Q2W7","FY19Q2W8","FY19Q2W9","FY19Q2W10"))) %>%
-  #mutate(MON = factor(MON, levels = c('JUN','JUL','AUG','SEP','OCT','NOV','DEC','JAN','FEB','MAR','APR','MAY'))) %>%
-  mutate(YRMON = factor(YRMON, levels = c('19 JUN','19 JUL','19 AUG','19 SEP','19 OCT','19 NOV','19 DEC','19 JAN','20 FEB','20 MAR','20 APR','20 MAY','20 JUN'))) %>%
-  arrange(VERSION,CFG,REGION,YRMON,WK) -> mrp_data.ordered
 ```
 
-```{sql connection=db, output.var = 'calr2Fisc_match'}
-SELECT [CLDR_YYYYMMDD_VAL]
-      ,[CLDR_WEEK_VAL]
-      ,[CLDR_MTH_VAL]
-      ,[CLDR_QTR_VAL]
-      ,[FISC_WEEK_VAL]
-      ,[FISC_WEEK_END_DATE]
-      ,[FISC_MTH_VAL]
-      ,[FISC_QTR_VAL]
-      ,[FISC_YR_VAL]
-	  ,[CLDR_MTH_WEEK_NUM]
-	  ,[FISC_MTH_WEEK_NUM]
-  FROM [IRIS].[Base].[COMN_BASE.CORP_CLDR]
-  WHERE FISC_YR_NUM>=2019 AND FISC_YR_NUM<=2020
+The MONWKYR in MRP data are actually Calendar Month, Fiscal Week, and Fiscal Year.
+
+```{r Use the Hyperion_Calendar_Mapping to map the MRP MONWKYR to Fiscal Calendar}
+# Hyperion_Calendar_Mapping.xlsx
+library(readxl)
+Hyperion_Calendar_Mapping <- read_excel("~/Yao_Rdata/Hyperion_Calendar_Mapping.xlsx")
+mrp_data0 %>% left_join(unique(select(Hyperion_Calendar_Mapping,-Fiscal_Date)),by=c('MONWKYR'='Hyperion_Wk_MONWKYR')) -> mrp_data.calr_mapped
+
+write_feather(mrp_data.calr_mapped,'~/Yao_Rdata/mrp_HDD_caldr_mapped.feather')
 ```
-
-```{r Map using FISC_YR, CLDR_MTH, FISC_MTH_WEEK_NUM}
-#write_feather(calr2Fisc_match,'~/Yao_Rdata/calr2Fisc_match.feather')
-calr2Fisc_match <- read_feather('~/Yao_Rdata/calr2Fisc_match.feather')
-
-# Preprocessing the CALR2FISC data to match calender to fiscal year
-calr2Fisc_match$FISC_YR <- substr(calr2Fisc_match$FISC_YR_VAL,start = 3,stop = 4) # Use the FISCAL Year to merge
-# Extract the Fiscal Week Number and use this to 
-
-Time.needed <- select(calr2Fisc_match,FISC_YR,CLDR_MTH_VAL,FISC_WEEK_VAL,FISC_WEEK_END_DATE,FISC_MTH_WEEK_NUM) %>% unique() %>%
-  mutate(CLDR_MTH_VAL = factor(CLDR_MTH_VAL, levels = c('JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'))) %>%
-  arrange(FISC_WEEK_VAL,CLDR_MTH_VAL)
-
-# Since some calr months correspond to multiple fiscal month, only keep the correct match, which is the first month that matches the fiscal month. Thus, remove the duplicated rows as needed
-# Time.needed$duplicatedCalrMon <- duplicated(Time.needed$CLDR_MTH_VAL)
-# Time.needed$duplicatedFiscMon <- duplicated(Time.needed$FISC_MTH_VAL)
-
-mrp_data.ordered$WK <- as.numeric(mrp_data.ordered$WK)
-
-mrp_data.ordered %>% left_join(Time.needed,by = c('FISC_YR','MON'='CLDR_MTH_VAL','WK'='FISC_MTH_WEEK_NUM')) %>% unique() -> mrp_data.wFiscal # FISC_WEEK_END_DATE,
-mrp_data.wFiscal[!duplicated(mrp_data.wFiscal$MRP_CT),] -> marp_data.unique
-```
-
-Okay. Now all is clear. The MONWKYR in MRP data are actually Calendar Month, Fiscal Week, and Fiscal Year.
-7/19/2018 Oh no. Still duplicated data...
-
-```{r Map using FISC_YR, CLDR_MTH, CLDR_MTH_WEEK_NUM}
-#write_feather(calr2Fisc_match,'~/Yao_Rdata/calr2Fisc_match.feather')
-calr2Fisc_match <- read_feather('~/Yao_Rdata/calr2Fisc_match.feather')
-
-# Preprocessing the CALR2FISC data to match calender to fiscal year
-calr2Fisc_match$FISC_YR <- substr(calr2Fisc_match$FISC_YR_VAL,start = 3,stop = 4) # Use the FISCAL Year to merge
-
-Time.needed <- select(calr2Fisc_match,FISC_YR,CLDR_MTH_VAL,FISC_WEEK_VAL,FISC_WEEK_END_DATE,CLDR_MTH_WEEK_NUM) %>% unique() %>%
-  mutate(CLDR_MTH_VAL = factor(CLDR_MTH_VAL, levels = c('JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'))) %>%
-  arrange(FISC_WEEK_VAL,CLDR_MTH_VAL)
-
-# Since some calr months correspond to multiple fiscal month, only keep the correct match, which is the first month that matches the fiscal month. Thus, remove the duplicated rows as needed
-# Time.needed$duplicatedCalrMon <- duplicated(Time.needed$CLDR_MTH_VAL)
-# Time.needed$duplicatedFiscMon <- duplicated(Time.needed$FISC_MTH_VAL)
-
-mrp_data.ordered$WK <- as.numeric(mrp_data.ordered$WK)
-
-mrp_data.ordered %>% left_join(Time.needed,by = c('FISC_YR','MON'='CLDR_MTH_VAL','WK'='CLDR_MTH_WEEK_NUM')) %>% unique() -> mrp_data.wFiscal # FISC_WEEK_END_DATE,
-
-mrp_data.wFiscal[!duplicated(mrp_data.wFiscal$MRP_CT),] -> marp_data.unique
-```
-
-OMG, the above mapping does not work perfectly.
-Let me try another table.
 
 
