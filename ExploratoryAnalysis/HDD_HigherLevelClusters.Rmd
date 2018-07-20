@@ -1,0 +1,136 @@
+---
+title: "HigherLevelClusters"
+author: "Yao"
+date: "June 13-15, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(scales)
+library(ggthemes)
+library(ggrepel)
+options(scipen = 999)
+```
+
+## Higher Level Clusters than CFG Explorary
+
+```{r load data}
+# HDD data from IRIS
+load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+
+# CFG information
+CFG.info <- read.csv("~/Yao_Excels/CFGnamesInfo.csv")
+```
+
+
+```{r Data Table Join}
+# Weekly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Weekly
+
+# Monthly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Mo) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Monthly
+
+# Quarterly data from IRIS data
+hdd_qty %>% group_by(CFG, Fiscal_Qtr) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  left_join(CFG.info) -> CFG.names.joined -> HDD_Quarterly
+
+```
+
+```{r By Interface}
+HDD_Weekly %>% group_by(Fiscal_Wk,Interface) %>%
+  summarise(Fiscal_Wk_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=Interface, colour=Interface)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Weekly Sales by Interface', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01','FY18W01', 'FY19W01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+
+HDD_Monthly %>% group_by(Fiscal_Mo,Interface) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=Interface, colour=Interface)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Interface', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```
+
+I decided to plot the monthly data.
+
+```{r By Interface_Speed}
+HDD_Monthly %>% group_by(Fiscal_Mo,Interface_Speed) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=Interface_Speed, colour=Interface_Speed)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Interface_Speed', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```
+
+```{r By Interface_All}
+HDD_Monthly %>% group_by(Fiscal_Mo,Interface_All) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=Interface_All, colour=Interface_All)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Interface_All', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```
+
+```{r By RPM}
+HDD_Monthly %>% group_by(Fiscal_Mo,RPM) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=factor(RPM), colour=factor(RPM))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by RPM', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```
+
+```{r By Form_Factor}
+HDD_Monthly %>% group_by(Fiscal_Mo,Form_Factor) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=factor(Form_Factor), colour=factor(Form_Factor))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Form_Factor', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```
+
+```{r By Capacity}
+HDD_Monthly %>% group_by(Fiscal_Mo,Capacity) %>%
+  summarise(Fiscal_Mo_QTY=sum(HDD_QTY)) %>%
+  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=factor(Capacity), colour=factor(Capacity))) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'HDD Monthly Sales by Capacity', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  #scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0)
+```

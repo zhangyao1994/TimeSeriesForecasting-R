@@ -1,0 +1,127 @@
+---
+title: "IRIS HDD Forecasting for each CFG using Weekly Data"
+author: "Yao"
+date: "June 11, 2018"
+output: html_document
+---
+
+This is the parallel function version using Facebook 'Prophet'.
+It turned out that linear models work better.
+6/11/2018 Forecast F19W07-W15 and then compare my forecasting Prophet_fcast to MRP.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+
+# Load Facebook Prophet package
+library(Rcpp)
+library(prophet)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+load("HDD_QTY_IRIS.RData")
+
+# Weekly data
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r Forecast Function}
+myforecast <- function(temp_data){
+  df <- data.frame(ds = temp_data$date, y = temp_data$HDD_QTY)
+  n <- nrow(df)
+  
+  # Split into training and test sets
+  train <- df %>% filter(ds < '2018-02-23')
+  test <- df %>% filter(ds >= '2018-03-23' & ds <= '2018-05-18')
+  
+  if (nrow(test)<9){
+    return(c(CFGgroups[i_CFG],rep(NA,9)))
+  }
+  
+  m <- prophet(train) # growth = 'logistic' works bad..
+  forecastPeriodLen <- 9 + 4 # focus on the later 9 weeks
+  future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
+  
+  fcast <- predict(m, future)
+  
+  pred_test <- test %>%
+    add_column(yhat = fcast$yhat[5:13])
+  
+  if (0){
+    annotatePos <- max(df$y)*0.85
+    rectPos <- max(df$y)
+    p <- ggplot(aes(x = ds), data = df) +
+      labs(title = paste(CFGgroups[i_CFG],"HDD Weekly Demand"), x = "Fiscal Week End Date",y='Weekly Demand') +
+      geom_point(aes(x = ds, y = y), data = df, alpha = 0.5, color = palette_light()[[1]]) + 
+      geom_line(aes(x = ds, y = y), data = df, alpha = 0.5, color = palette_light()[[1]]) +
+      geom_point(aes(x = ds, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) + 
+      geom_line(aes(x = ds, y = yhat), data = pred_test, alpha = 0.5, color = palette_light()[[2]]) +
+      annotate("text", x = ymd('2017-07-07'), y = annotatePos,
+               color = palette_light()[[1]], label = "Train Region") +
+      annotate("text", x = ymd('2018-04-20'), y = annotatePos*0.85,
+               color = palette_light()[[1]], label = "Test Region") +
+      annotate("text", x = ymd('2018-03-09'), y = annotatePos*1.1,
+               color = palette_light()[[1]], label = "Forecast 1 month ahead") +
+      geom_rect(xmin = as.numeric(ymd('2018-03-23')),
+                xmax = as.numeric(ymd('2018-05-18')),
+                ymin = 0, ymax = rectPos,
+                fill = palette_light()[[4]], alpha = 0.01) + 
+      geom_rect(xmin = as.numeric(ymd(df$ds[1])),
+                xmax = as.numeric(ymd('2018-02-23')),
+                ymin = 0, ymax = rectPos,
+                fill = palette_light()[[3]], alpha = 0.01) + 
+      expand_limits(y = 0) +
+      theme_tq() 
+    ggsave(filename = paste(CFGgroups[i_CFG],".png"), p, width=10)
+  }
+  
+  return(c(CFGgroups[i_CFG],pred_test$yhat))
+}
+```
+
+
+```{r Run the fuctions parallel}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+
+Prophet_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','prophet','Rcpp','ggthemes','lubridate','tidyquant')) %dopar% {
+  # For each CFG
+  temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+  # Forecast
+  myforecast(temp_data)
+}
+
+dimnames(Prophet_fcast)[[2]] <- c('CFG',as.character(HDD_Weekly$Fiscal_Wk[112:120]))
+Prophet_fcast <- data.frame(Prophet_fcast)
+Prophet_fcast[,2:10] <- lapply(Prophet_fcast[,2:10], function(x) as.numeric(as.character(x)))
+
+num_CFG_valid <- nrow(na.omit(Prophet_fcast)) # The total number of CFGs were forecasted.
+
+Prophet_fcast %>% gather(key='date',value='Prophet_fcast',FY19W07:FY19W15) -> Prophet_fcast
+saveRDS(Prophet_fcast, 'Prophet_fcast.rds') # my_data <- readRDS(file)
+```
+
+```{r close the clusters}
+# for Parallel package
+stopImplicitCluster()
+```
