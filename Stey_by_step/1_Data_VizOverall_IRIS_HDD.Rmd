@@ -8,7 +8,7 @@ output: html_document
 Latet update: 7/10/2018
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,fig.align="center", fig.width=10)
 library(tidyverse)
 library(scales)
 library(ggthemes)
@@ -35,6 +35,7 @@ blank_theme <- theme_minimal()+
 I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
 ```{r load the data}
 HDD_data <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS.feather')
+mrp_data.calr_mapped <- read_feather('~/Yao_Rdata/mrp_HDD_caldr_mapped.feather')
 ```
 
 ```{r plot overall HDD_QTY}
@@ -46,59 +47,80 @@ LastQtr <- tail(unique(HDD_data$Fiscal_Qtr), n=1)
 # HDD Weekly Sales
 week_data <- HDD_data %>% group_by(Fiscal_Wk) %>%
   summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+week_data$VERSION <- 'Historical'
+
+week_mrp <- mrp_data.calr_mapped %>% group_by(VERSION,Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_MRP=sum(MRP_CT))
+
+week_data.2 <- week_data %>% full_join(week_mrp) %>%
+  gather(Source,HDD_QTY,Fiscal_Wk_QTY,Fiscal_Wk_MRP)
+week_data.2$Source <- as.factor(week_data.2$Source)
+levels(week_data.2$Source) <- c('MRP','Actual')
 
 # HDD Monthly Sales
 month_data <- HDD_data %>% group_by(Fiscal_Mo) %>%
   summarise(Fiscal_Mo_QTY=sum(PART_QTY)) #%>% 
-  #filter(Fiscal_Mo<LastMon)
+month_data$VERSION <- 'Historical'
+
+month_mrp <- mrp_data.calr_mapped %>% group_by(VERSION,Fiscal_Mo) %>%
+  summarise(Fiscal_Mo_MRP=sum(MRP_CT))
+
+month_data.2 <- month_data %>% full_join(month_mrp) %>%
+  gather(Source,HDD_QTY,Fiscal_Mo_QTY,Fiscal_Mo_MRP)
+month_data.2$Source <- as.factor(month_data.2$Source)
+levels(month_data.2$Source) <- c('MRP','Actual')
 
 # HDD Quarterly Sales
 quarter_data <- HDD_data %>% group_by(Fiscal_Qtr) %>%
   summarise(Fiscal_Qtr_QTY=sum(PART_QTY)) #%>%
-  #filter(Fiscal_Qtr<LastQtr)
+quarter_data$VERSION <- 'Historical'
 
-# Plot together
-# ? I am not sure how to put week, month, and quarter together.
+quarter_mrp <- mrp_data.calr_mapped %>% group_by(VERSION,Fiscal_Qtr) %>%
+  summarise(Fiscal_Qtr_MRP=sum(MRP_CT))
+
+quarter_data.2 <- quarter_data %>% full_join(quarter_mrp) %>%
+  gather(Source,HDD_QTY,Fiscal_Qtr_QTY,Fiscal_Qtr_MRP)
+quarter_data.2$Source <- as.factor(quarter_data.2$Source)
+levels(quarter_data.2$Source) <- c('MRP','Actual')
  
 # Plot separately but fix the axis range
-p_week <- week_data %>%
-  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=1)) +
+p_week <- week_data.2 %>%
+  ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group=interaction(Source,VERSION,drop = TRUE),color=interaction(Source,VERSION,drop = TRUE))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
-  labs(title = paste('Overall HDD Weekly Sales FY17W01-',LastWk, sep = ""), x = "Fiscal Week", y = "Part Quantity") + 
+  labs(title = 'Overall HDD Weekly Sales and MRP Forecast', x = "Fiscal Week", y = "Part Quantity") + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
-  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
-  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+  scale_color_tableau('tableau20',name='Data Source and Version') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01','FY20W01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5)) +
   scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
-p_week
+ggplotly(p_week)
+# MRP forecast results are crazy!
 
-p_month <- month_data %>%
-  ggplot(aes(x=Fiscal_Mo,y=Fiscal_Mo_QTY,group=1)) +
+p_month <- month_data.2 %>%
+  ggplot(aes(x=Fiscal_Mo,y=HDD_QTY,group=interaction(Source,VERSION,drop = TRUE),color=interaction(Source,VERSION,drop = TRUE))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
-  labs(title = paste('HDD Monthly Sales FY17M01-',LastMon, sep = ""), x = "Fiscal Month", y = "Part Quantity") + 
+  labs(title = 'Overall HDD Monthly Sales and MRP Forecast', x = "Fiscal Month", y = "Part Quantity") + 
   theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
-  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
-  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+  scale_color_tableau('tableau20',name='Data Source and Version') + 
+  scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01','FY20M01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5)) +
   scale_y_continuous(label=comma) + expand_limits(y = 0) + #coord_cartesian(ylim = c(0,2100000)) +
   geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
-  # theme(axis.text.x=element_blank())
-p_month
+ggplotly(p_month)
 
-p_quarter <- quarter_data %>%
-  ggplot(aes(x=Fiscal_Qtr,y=Fiscal_Qtr_QTY,group=1)) +
+p_quarter <- quarter_data.2 %>%
+  ggplot(aes(x=Fiscal_Qtr,y=HDD_QTY,group=interaction(Source,VERSION,drop = TRUE),color=interaction(Source,VERSION,drop = TRUE))) +
   geom_point(size = 2) +
   geom_line(size = 1.5) +
-  #geom_bar(stat = 'identity') +
-  labs(title = paste('Overall HDD Quarterly Sales FY17Q1-',LastQtr, sep = ""), x = "Fiscal Quarter", y = "Part Quantity") + 
+  labs(title = 'Overall HDD Quarterly Sales and MRP Forecast', x = "Fiscal Quarter", y = "Part Quantity") + 
   theme_minimal(base_size = 14) + 
-  scale_color_tableau('tableau10medium') + 
+  scale_color_tableau('tableau20',name='Data Source and Version') + 
   #scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
-  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
+  theme(legend.position = 'bottom',,plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
-p_quarter
+ggplotly(p_quarter)
 ```
 
 
@@ -119,7 +141,7 @@ p_Monthly_RGN_DESC <- temp_data %>%
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
-p_Monthly_RGN_DESC
+ggplotly(p_Monthly_RGN_DESC)
 
 temp_data <- HDD_data %>% 
   group_by(RGN_DESC,Fiscal_Qtr) %>%
@@ -137,7 +159,7 @@ p_Quarterly_Region <- temp_data %>%
   #scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
-p_Quarterly_Region
+ggplotly(p_Quarterly_Region)
 
 temp_data %>% group_by(RGN_DESC) %>%
   summarise(RGN_QTY = sum(RGN_DESC_Fiscal_Qtr_QTY)) -> temp_data
@@ -267,7 +289,7 @@ p_Quarterly_Customer_LOB <- data4plot %>%
   scale_x_discrete(breaks = c('FY17Q1', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,1500000))
-p_Quarterly_Customer_LOB
+ggplotly(p_Quarterly_Customer_LOB)
 ```
 
 ```{r by LOB_DESC}
@@ -286,7 +308,7 @@ p_Monthly_LOB_DESC <- temp_data %>%
   scale_x_discrete(breaks = c('FY17M01','FY18M01', 'FY19M01')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
-p_Monthly_LOB_DESC
+ggplotly(p_Monthly_LOB_DESC)
 
 HDD_data %>% 
   group_by(LOB_DESC,Fiscal_Qtr) %>%
@@ -303,7 +325,7 @@ p_Quarterly_LOB_DESC <- temp_data %>%
   #scale_x_discrete(breaks = c('FY17Q2', 'FY18Q1', 'FY19Q1')) +
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,2100000))
-p_Quarterly_LOB_DESC
+ggplotly(p_Quarterly_LOB_DESC)
 
 ```
 
@@ -365,7 +387,7 @@ p <- temp_data %>%
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
   facet_wrap(~RGN_DESC)
-p
+ggplotly(p)
 ```
 
 ```{r By Region and Volume}
@@ -402,6 +424,6 @@ p <- data.4plot %>%
   theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5))+
   scale_y_continuous(label=comma) + expand_limits(y = 0) +
   facet_wrap(~RGN_DESC)
-p
+ggplotly(p)
 ```
 
