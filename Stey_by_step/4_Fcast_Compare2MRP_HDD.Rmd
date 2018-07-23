@@ -5,7 +5,7 @@ date: "June 8-29, 2018"
 output: html_document
 ---
 
-Updated on 06/29/2018
+Updated on 07/23/2018
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
 library(tidyverse)
@@ -41,7 +41,10 @@ Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv')
 Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
 
 # All mine
-Fcast_Yao <- read_feather('~/Yao_Rdata/All_fcast.feather')
+Fcast_Yao_Global <- read_feather('~/Yao_Rdata/All_fcast_Global.feather')
+Fcast_Yao_Rgn <- read_feather('~/Yao_Rdata/All_fcast_Rgn.feather')
+Fcast_Yao_Global$Region <- 'Global'
+Fcast_Yao <- rbind(Fcast_Yao_Global,Fcast_Yao_Rgn)
 
 # HDD data from IRIS
 hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
@@ -55,7 +58,7 @@ hdd_qty$Region <- as.factor(hdd_qty$RGN_DESC)
 Fcast_MRP.Americas <- filter(Fcast_MRP,Region=='AMF')
 Fcast_MRP.Americas$Region <- as.factor('Americas')
 Fcast_MRP <- rbind(Fcast_MRP.Americas,filter(Fcast_MRP,Region=='APJ'|Region=='EMEA'))
-rm(Fcast_MRP.Americas)
+rm(Fcast_MRP.Americas,Fcast_Yao_Global,Fcast_Yao_Rgn)
 ```
 
 ```{r Match CFG names, eval=FALSE, include=FALSE}
@@ -63,30 +66,41 @@ rm(Fcast_MRP.Americas)
 # Weekly data from IRIS data
 hdd_qty %>% group_by(CFG, Region, Fiscal_Wk) %>%
   summarise(HDD_QTY = sum(PART_QTY)) %>%
-  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly
+  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Rgn
+hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) %>%
+  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Global
+HDD_Weekly_Global$Region <- 'Global'
+HDD_Weekly <- rbind(HDD_Weekly_Global,HDD_Weekly_Rgn)
+rm(HDD_Weekly_Global,HDD_Weekly_Rgn)
 
 # Weekly data from MRP
 Fcast_MRP %>% group_by(CFG, Region, Fiscal_Wk) %>%
   summarise(MRP_Fcast = sum(value)) %>%
-  gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP
+  gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP_Rgn
+Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
+  summarise(MRP_Fcast = sum(value)) %>%
+  gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP_Global
+HDD_Weekly_MRP_Global$Region <- 'Global'
+HDD_Weekly_MRP <- rbind(HDD_Weekly_MRP_Global,HDD_Weekly_MRP_Rgn)
+rm(HDD_Weekly_MRP_Global,HDD_Weekly_MRP_Rgn)
 
 # join
 HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
   full_join(Fcast_Yao) -> CFG_fcast.joined
 rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
 
-write_feather(CFG_fcast.joined, "~/Yao_Rdata/CFG_fcast.feather")
+write_feather(CFG_fcast.joined, "~/Yao_Rdata/CFG_fcast_joined.feather")
 ```
 
 ```{r Load feather data}
 # Load feather data
-CFG_fcast.joined <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
+CFG_fcast.joined <- read_feather("~/Yao_Rdata/CFG_fcast_joined.feather")
 CFG_RGN_QTR_data.grouped <- read_feather("~/Yao_Rdata/CFG_RGN_Qtr_grouped.feather")
 # Add a columne w: weight # The sum of w is 1.#
 Total_Avg_Qtr_HDD_QTY <- sum(CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY)
 CFG_RGN_QTR_data.grouped$w <- CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY/Total_Avg_Qtr_HDD_QTY
 ```
-
 
 ```{r Visualize HDD_QTY and Forecast MRP}
 # Get all CFG names, all Region names, and all Model names
@@ -124,7 +138,7 @@ for (i_CFG in 1:len_CFG) {
     }
   }
 }
-l_ggplotly
+#l_ggplotly
 ```
 
 ```{r Calculate errors}
@@ -139,7 +153,7 @@ write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
 read_feather("~/Yao_Rdata/CFG_fcast.feather")
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
-CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W20") %>%
+CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W22") %>%
   # calculate absolute percent error for MRP
   mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
   # calculate absolute percent error for Prophet
@@ -172,50 +186,50 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
     
     # MRP
-    # Weekly Error Calculation
-    mape_wk_MRP<- mean(temp_data$ape_MRP,na.rm = TRUE)
+    # Weekly Error Calculation: Weighted MAPE by Week
+    mape_wk_MRP<- weighted.mean(temp_data$ape_MRP,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # Prophet
     # Weekly Error Calculation
-    mape_wk_Prophet<- mean(temp_data$ape_Prophet,na.rm = TRUE)
+    mape_wk_Prophet<- weighted.mean(temp_data$ape_Prophet,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # ARIMA
     # Weekly Error Calculation
-    mape_wk_ARIMA<- mean(temp_data$ape_ARIMA,na.rm = TRUE)
+    mape_wk_ARIMA<- weighted.mean(temp_data$ape_ARIMA,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # TBATS
     # Weekly Error Calculation
-    mape_wk_TBATS<- mean(temp_data$ape_TBATS,na.rm = TRUE)
+    mape_wk_TBATS<- weighted.mean(temp_data$ape_TBATS,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk lm
     # Weekly Error Calculation
-    mape_wk_lm<- mean(temp_data$ape_lm,na.rm = TRUE)
+    mape_wk_lm<- weighted.mean(temp_data$ape_lm,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk RF
     # Weekly Error Calculation
-    mape_wk_RF<- mean(temp_data$ape_RF,na.rm = TRUE)
+    mape_wk_RF<- weighted.mean(temp_data$ape_RF,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # timetk Xgboost
     # Weekly Error Calculation
-    mape_wk_Xgboost<- mean(temp_data$ape_Xgboost,na.rm = TRUE)
+    mape_wk_Xgboost<- weighted.mean(temp_data$ape_Xgboost,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
     # Ensemble
     # Weekly Error Calculation
-    mape_wk_Ensemble<- mean(temp_data$ape_Ensemble,na.rm = TRUE)
+    mape_wk_Ensemble<- weighted.mean(temp_data$ape_Ensemble,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
     APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
     
@@ -237,7 +251,7 @@ results[c("CFG","Region" )] <- lapply(results[c("CFG","Region" )], function(x) a
 
 results %>% left_join(CFG_RGN_QTR_data.grouped, by = c("CFG","Region"="RGN_DESC")) -> results.weight
 
-path <- "~/Yao_Rdata/APE_values.feather"
+path <- "~/Yao_Rdata/MAPE_weighted.feather"
 write_feather(results, path)
 
 # Attainment Rates
@@ -257,8 +271,9 @@ for (i_Region in 1:len_Region){
   MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
   # Weighted MAPE
   weighted_MAPE <- lapply(data.selected[indx],function(x) sum(x*data.selected$w,na.rm = TRUE))
+  weighted_MAPE2 <- lapply(data.selected[indx],weighted.mean, data.selected$w, na.rm = TRUE)
   # combine
-  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE)
+  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE,weighted_MAPE2)
 }
 
 Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
