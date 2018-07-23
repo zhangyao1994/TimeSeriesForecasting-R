@@ -66,9 +66,10 @@ len <- length(CFGgroups)
 
 max(temp_qtr$CFG_Fiscal_Qtr_QTY)
 
+PlotFlag <- 1
 for (i in 1:len){
-  
-  if (0){
+# This loop is for plotting the trend of each CFG. A similar loop can be used to plot the forecast results as well.  
+  if (PlotFlag){
     # HDD Weekly Sales
     temp_data <- filter(temp_wk,CFG==CFGgroups[i])
     p_week<- temp_data %>%
@@ -80,13 +81,13 @@ for (i in 1:len){
       scale_color_tableau('tableau10medium') + 
       scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+      scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,300000))
     #print(p_week)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Wk_Sales',".png"), p_week, width=10)
   }
   
-  if (0){
+  if (PlotFlag){
     # HDD Monthly Sales
     temp_data <- filter(temp_mo,CFG==CFGgroups[i])
     p_month <- temp_data %>%
@@ -98,14 +99,14 @@ for (i in 1:len){
       scale_color_tableau('tableau10medium') + 
       scale_x_discrete(breaks = c('FY17M04','FY18M01', 'FY19M01')) +
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
-      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+      scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,300000))
       geom_vline(xintercept = seq(3,39,3), linetype="dashed", color = 'gray')
     #print(p_month)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Mo_Sales',".png"), p_month, width=10)
   }
   
-  if (0){
+  if (PlotFlag){
     # HDD Quarterly Sales
     temp_data <- filter(temp_qtr,CFG==CFGgroups[i])
     p_quarter <- temp_data %>%
@@ -117,7 +118,7 @@ for (i in 1:len){
       theme_minimal(base_size = 14) + 
       scale_color_tableau('tableau10medium') + 
       theme(legend.position = 'none',plot.title = element_text(hjust = 0.5))+
-      scale_y_continuous(label=comma) + expand_limits(y = 0) + coord_cartesian(ylim = c(0,300000))
+      scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,300000))
     #print(p_quarter)
     #dev.off()
     ggsave(filename = paste(CFGgroups[i],'HDD_Qtr_Sales',".png"), p_quarter, width=10)
