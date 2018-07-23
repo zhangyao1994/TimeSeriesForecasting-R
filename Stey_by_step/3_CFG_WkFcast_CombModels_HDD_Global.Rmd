@@ -1,12 +1,12 @@
 ---
-title: "IRIS HDD Forecasting for each CFG by Region"
+title: "IRIS HDD Forecasting for each CFG Globally"
 author: "Yao"
 date: "June 12-13, 2018"
 output: html_document
 ---
 
 This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand, and then compare my forecasting All_fcast to MRP.
-Update on 6/22/2018.
+Update on 7/23/2018.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -41,6 +41,9 @@ library(iterators)
 library(parallel)
 library(foreach)
 library(doParallel)
+
+# faster data format
+library(feather)
  
 # Calculate the number of cores
 no_cores <- detectCores() - 1
@@ -50,7 +53,7 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-load("~/Yao_Rdata/HDD_QTY_IRIS.RData")
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 
 # Weekly data
 hdd_qty %>% group_by(CFG,Fiscal_Wk_End_Date,Fiscal_Wk) %>%
@@ -117,7 +120,7 @@ myforecast <- function(temp_data){
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  AvailableWeek <- 12 # Remember to update this if the IRIS data is updated
+  AvailableWeek <- nrow(test)# Remember to update this if the IRIS data is updated
   lm_fcast <- c(CFGgroups[i_CFG],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
@@ -145,7 +148,7 @@ HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
 
-  Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
     # Forecast for each CFG
     temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
     oneCFG_fcast <- myforecast(temp_data)
@@ -153,7 +156,6 @@ len <- length(CFGgroups)
   }
 
 ## by week
-#weekNames <- c(sprintf("FY19W0%d", 3:9),sprintf("FY19W%d", 10:30))
 weekNames <- c(sprintf("FY19W0%d", 7:9),sprintf("FY19W%d", 10:30))
 
 dimnames(Comb_fcast)[[2]] <- c('CFG','Model',as.character(weekNames))
@@ -165,7 +167,7 @@ num_CFG_valid <- nrow(Comb_fcast)/6 # The total number of CFGs were forecasted.
 Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
 
 # For plot, do not delete the NA for now.
-saveRDS(All_fcast, 'All_fcast.rds') # my_data <- readRDS(file)
+write_feather(All_fcast, '~/Yao_Rdata/All_fcast_Global.feather') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}

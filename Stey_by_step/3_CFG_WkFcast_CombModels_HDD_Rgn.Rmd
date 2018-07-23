@@ -118,7 +118,7 @@ myforecast <- function(temp_data){
   test_augmented <- test %>%
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
-  AvailableWeek <- 14
+  AvailableWeek <- nrow(test)
   lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
