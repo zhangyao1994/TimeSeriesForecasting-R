@@ -6,7 +6,7 @@ output: html_document
 ---
 
 This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand, and then compare my forecasting All_fcast to MRP.
-Update on 6/22/2018.
+Update on 7/23/2018.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -170,7 +170,7 @@ Comb_fcast[,4:ncol(Comb_fcast)] <- lapply(Comb_fcast[,4:ncol(Comb_fcast)], funct
 Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',FY19W07:FY19W30) -> All_fcast
 
 # For plot, do not delete the NA for now.
-write_feather(All_fcast, '~/Yao_Rdata/All_fcast.feather') # my_data <- readRDS(file)
+write_feather(All_fcast, '~/Yao_Rdata/All_fcast_Rgn.feather') # my_data <- readRDS(file)
 ```
 
 ```{r close the clusters}
