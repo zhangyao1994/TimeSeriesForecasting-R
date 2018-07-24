@@ -147,8 +147,8 @@ CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% 
 
 CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 
-#CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
-#write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
+CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
+write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast_joined.feather")
 
 #CFG_cast <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
 
