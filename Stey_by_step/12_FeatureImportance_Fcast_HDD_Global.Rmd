@@ -1,0 +1,128 @@
+---
+title: "IRIS HDD Forecasting for each CFG Globally"
+author: "Yao"
+date: "July 24, 2018"
+output: html_document
+---
+
+This is the parallel function version using weekly data with Xgboost, to forecast HDD demand, and then check the feature importance.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+
+# Load egboost relevant libraries
+library(quantmod); library(TTR); library(xgboost);
+
+# Load timetk package
+library(tidyquant)
+library(timetk)
+library(broom)
+
+# Random Forest
+library(party)
+library(randomForest)
+
+# Load TBATS package, as well as for ARIMA
+library(forecast)
+
+# Load Facebook Prophet package
+library(Rcpp)
+library(prophet)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+# faster data format
+library(feather)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
+```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+
+# Weekly data
+hdd_qty %>% group_by(CFG,Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+```
+
+```{r Forecast Function}
+myforecast <- function(temp_data){
+  df <- data.frame(ds = temp_data$date, y = temp_data$HDD_QTY)
+  n <- nrow(df)
+  
+  # Split into training and test sets
+  train <- df %>% filter(ds < '2018-03-23') # No time ahead
+  test <- df %>% filter(ds >= '2018-03-23')
+  
+  WeekAhead <- 0  # no time ahead
+  forecastPeriodLen <- 24 + WeekAhead # predict the next half year if possible
+  
+  if (nrow(test)<1 | nrow(train)<2){
+    return(c(CFGgroups[i_CFG],rep(NA,10)))
+  }
+  
+  # Add time series signature
+  train_augmented <- train %>%
+    tk_augment_timeseries_signature()
+  # maunually drop unvalid variables
+  temp <-
+    train_augmented %>% select(-wday.lbl,-month.lbl,-diff)
+  # Remove the column with only one value
+  if (nrow(temp)>1) {
+    temp <- Filter(function(x)(length(unique(x))>1), temp)
+  }
+  
+  # We need to again augment the time series signature to the test set.
+  test_augmented <- test %>%
+    tk_augment_timeseries_signature()
+  
+  AvailableWeek <- nrow(test)# Remember to update this if the IRIS data is updated
+  
+  # Xgboost
+  # Train the xgboost model using the "xgboost" function
+  dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
+  xgModel = xgboost(data = dtrain, nrounds = ceiling(sqrt(nrow(dtrain)))) # sqrt(nrow(dtrain)), I guess
+  importance <- xgb.importance(feature_names = colnames(dtrain), model = xgModel)
+  
+  return(rbind(c(CFGgroups[i_CFG],importance$Feature[1:10]),c(CFGgroups[i_CFG],importance$Gain[1:10])))
+}
+```
+
+
+```{r Run the fuctions parallel}
+HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG))
+len <- length(CFGgroups)
+
+Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+    # Forecast for each CFG
+    temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
+    oneCFG_fcast <- myforecast(temp_data)
+    oneCFG_fcast
+  }
+
+ColNames <- c(sprintf("Top0%d", 1:9),sprintf("Top%d", 10))
+
+dimnames(Comb_fcast)[[2]] <- c('CFG',as.character(ColNames))
+
+write_excel_csv(Comb_fcast,"~/Yao_Rdata/Xgboost_FeatureImportance.csv")
+```
+
+```{r close the clusters}
+# for Parallel package
+stopImplicitCluster()
+```
