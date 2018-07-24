@@ -386,41 +386,41 @@ results %>% left_join(CFG_RGN_QTR_data.grouped, by = c("CFG","Region"="RGN_DESC"
 
 path <- "~/Yao_Rdata/MAPE_weighted.feather"
 write_feather(results, path)
-
-# Attainment Rates
-Attainment_Rate_Cal <- function(x) {
-  length(which(x<=20))/sum(!is.na(x))*100
-}
-
-results.clean <- results.weight # consider all CFGs
-
-Eval.results <- list()
-# For different Regions
-for (i_Region in 1:len_Region){
-  data.selected <- filter(results.clean,Region==Region.groups[i_Region])
-  AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
-  # MAPE
-  MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
-  MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
-  # Weighted MAPE
-  weighted_MAPE <- lapply(data.selected[indx],function(x) sum(x*data.selected$w,na.rm = TRUE))
-  weighted_MAPE2 <- lapply(data.selected[indx],weighted.mean, data.selected$w, na.rm = TRUE)
-  # combine
-  Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE,weighted_MAPE2)
-}
-
-Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
-dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
-Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
-Eval.results_fcastRegion[,1:9] <- lapply(Eval.results_fcastRegion[,1:9], function(x) as.numeric(as.character(x)))
-
-Eval.results_wk <- data.frame(Eval.results[,seq(1,18,2)])
-dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
-Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
-Eval.results_wk[,1:9] <- lapply(Eval.results_wk[,1:9], function(x) as.numeric(as.character(x)))
-
-write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
-write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
+# 
+# # Attainment Rates
+# Attainment_Rate_Cal <- function(x) {
+#   length(which(x<=20))/sum(!is.na(x))*100
+# }
+# 
+# results.clean <- results.weight # consider all CFGs
+# 
+# Eval.results <- list()
+# # For different Regions
+# for (i_Region in 1:len_Region){
+#   data.selected <- filter(results.clean,Region==Region.groups[i_Region])
+#   AttainmentRates <- lapply(data.selected[indx],Attainment_Rate_Cal)
+#   # MAPE
+#   MAPE <- lapply(data.selected[indx],mean, na.rm = TRUE)
+#   MAPE_median <- lapply(data.selected[indx],median, na.rm = TRUE)
+#   # Weighted MAPE
+#   weighted_MAPE <- lapply(data.selected[indx],function(x) sum(x*data.selected$w,na.rm = TRUE))
+#   weighted_MAPE2 <- lapply(data.selected[indx],weighted.mean, data.selected$w, na.rm = TRUE)
+#   # combine
+#   Eval.results <- rbind(Eval.results,AttainmentRates,MAPE,MAPE_median,weighted_MAPE,weighted_MAPE2)
+# }
+# 
+# Eval.results_fcastRegion <- data.frame(Eval.results[,seq(2,18,2)])
+# dimnames(Eval.results_fcastRegion)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+# Eval.results_fcastRegion <- data.frame(Eval.results_fcastRegion,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
+# Eval.results_fcastRegion[,1:9] <- lapply(Eval.results_fcastRegion[,1:9], function(x) as.numeric(as.character(x)))
+# 
+# Eval.results_wk <- data.frame(Eval.results[,seq(1,18,2)])
+# dimnames(Eval.results_wk)[[2]] <- c('MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+# Eval.results_wk <- data.frame(Eval.results_wk,Region=rep(Region.groups,each = 4),Results=c('Attainment_Rates','MAPE','MAPE_median','Weighted_MAPE'))
+# Eval.results_wk[,1:9] <- lapply(Eval.results_wk[,1:9], function(x) as.numeric(as.character(x)))
+# 
+# write_feather(Eval.results_fcastRegion,"~/Yao_Rdata/Eval.results_fcastRegion.feather")
+# write_feather(Eval.results_wk,"~/Yao_Rdata/Eval.results_wk.feather")
 ```
 
 ```{r APE Table}
@@ -454,23 +454,23 @@ APE.selected %>% datatable(options=list(rowCallback = JS(
 
 
 ```{r Visualize Errors}
-ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
-           select(-Region,-Results,-Selected) %>%
-           gather(key="Model",value="Value") %>%
-           ggplot(aes(Model,Value)) +
-           geom_bar(stat = "identity") +
-           labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
-           theme_minimal(base_size = 14) + 
-           scale_fill_tableau('tableau10medium'))
-
-ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
-           select(-Region,-Results,-Selected) %>%
-           gather(key="Model",value="Value") %>%
-           ggplot(aes(Model,Value)) +
-           geom_bar(stat = "identity") +
-           labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
-           theme_minimal(base_size = 14) + 
-           scale_fill_tableau('tableau10medium'))
+# ggplotly(filter(Eval.results_fcastRegion,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
+#            select(-Region,-Results,-Selected) %>%
+#            gather(key="Model",value="Value") %>%
+#            ggplot(aes(Model,Value)) +
+#            geom_bar(stat = "identity") +
+#            labs(title = paste('Model Comparison by Forecast Region Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
+#            theme_minimal(base_size = 14) + 
+#            scale_fill_tableau('tableau10medium'))
+# 
+# ggplotly(filter(Eval.results_wk,Region==Region.groups[1],Results=='Weighted_MAPE') %>% 
+#            select(-Region,-Results,-Selected) %>%
+#            gather(key="Model",value="Value") %>%
+#            ggplot(aes(Model,Value)) +
+#            geom_bar(stat = "identity") +
+#            labs(title = paste('Model Comparison by Weekly Accuracy'), x = "Models", y = paste(str_replace_all('Weighted_MAPE','_',' '),"(%)")) + 
+#            theme_minimal(base_size = 14) + 
+#            scale_fill_tableau('tableau10medium'))
 
 ```
 
@@ -480,11 +480,11 @@ stopImplicitCluster()
 ```
 
 ```{r Best Selection for the test region}
-APE.selected <- results[,c(1,2,seq(4,20,2))]
-colnames(APE.selected) <- c("CFG","Region",'MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
-APE.selected$Selection <- apply(APE.selected,1,function(x) names(which.min(x[4:10])))
-APE.selected[c("Selection" )] <- lapply(APE.selected[c("Selection" )], function(x) as.factor(as.character(x)))
-write_feather(APE.selected,"~/Yao_Rdata/TestSelection.feather")
-APE.selected <- read_feather("~/Yao_Rdata/TestSelection.feather")
+# APE.selected <- results[,c(1,2,seq(4,20,2))]
+# colnames(APE.selected) <- c("CFG","Region",'MRP','Prophet','ARIMA','TBATS','lm','RF','Xgboost','Ensemble','Selected')
+# APE.selected$Selection <- apply(APE.selected,1,function(x) names(which.min(x[4:10])))
+# APE.selected[c("Selection" )] <- lapply(APE.selected[c("Selection" )], function(x) as.factor(as.character(x)))
+# write_feather(APE.selected,"~/Yao_Rdata/TestSelection.feather")
+# APE.selected <- read_feather("~/Yao_Rdata/TestSelection.feather")
 ```
 
