@@ -147,29 +147,26 @@ CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% 
 
 CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,timetk_RF,timetk_Xgboost), na.rm = TRUE) # removed timetk_lm
 
-CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
-write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
+#CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
+#write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast.feather")
 
-read_feather("~/Yao_Rdata/CFG_fcast.feather")
+#CFG_cast <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W22") %>%
-  # calculate absolute percent error for MRP
-  mutate(ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for Prophet
-  mutate(ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for ARIMA
-  mutate(ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for TBATS
-  mutate(ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for lm
-  mutate(ape_lm = abs((HDD_QTY - timetk_lm)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for RF
-  mutate(ape_RF = abs((HDD_QTY - timetk_RF)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for Xgboost
-  mutate(ape_Xgboost = abs((HDD_QTY - timetk_Xgboost)/HDD_QTY * 100)) %>%
-  # calculate absolute percent error for Ensemble
-  mutate(ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
+  # For MAE: mean(abs(error)) # calculate abs(error) here
+  mutate(err_MRP = abs(HDD_QTY - MRP_Fcast),err_Prophet = abs(HDD_QTY - Prophet),err_ARIMA = abs(HDD_QTY - ARIMA),err_TBATS = abs(HDD_QTY - TBATS),err_lm = abs(HDD_QTY - timetk_lm),err_RF = abs(HDD_QTY - timetk_RF),err_Xgboost = abs(HDD_QTY - timetk_Xgboost),err_Ensemble = abs(HDD_QTY - Ensemble)) %>%
+  # calculate absolute percent error for all models
+  mutate(ape_MRP = err_MRP/HDD_QTY * 100,ape_Prophet = err_Prophet/HDD_QTY * 100,ape_ARIMA = err_ARIMA/HDD_QTY * 100,ape_TBATS = err_TBATS/HDD_QTY * 100,ape_lm = err_lm/HDD_QTY * 100,ape_RF = err_RF/HDD_QTY * 100,ape_Xgboost = err_Xgboost/HDD_QTY * 100,ape_Ensemble = err_Ensemble/HDD_QTY * 100)
+  ###### RMSE (root mean squared error), also called RMSD (root mean squared deviation), and MAE (mean absolute error) are both used to evaluate models by summarizing the differences between the actual (observed) and predicted values. MAE gives equal weight to all errors, while RMSE gives extra weight to large errors.
+  # Calulate RMSE: sqrt(mean(error^2)) #
+
+# Function that returns Root Mean Squared Error
+RMSE <- function(error)
+{
+    sqrt(mean(error^2,na.rm = TRUE))
+}
+
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups2 <- levels(factor(CFG_fcast$CFG))
@@ -184,54 +181,73 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
   for (i_Region in 1:len_Region){
     temp_data <- filter(CFG_fcast,CFG==CFGgroups2[i_CFG],Region==Region.groups[i_Region])
     print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
+    totalHDD <- sum(temp_data$HDD_QTY)
+    w <- temp_data$HDD_QTY/totalHDD
     
     # MRP
-    # Weekly Error Calculation: Weighted MAPE by Week
-    mape_wk_MRP<- weighted.mean(temp_data$ape_MRP,temp_data$HDD_QTY, na.rm = TRUE)
-    # 12-week Error Calculation
-    APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    # Metric 1: Weighted MAPE by Week / WAPE
+    mape_wk_MRP <- weighted.mean(temp_data$ape_MRP,temp_data$HDD_QTY, na.rm = TRUE)
+    # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
+    WAPE_MRP <- sum(temp_data$err_MRP, na.rm = TRUE)/totalHDD*100
+    # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
+    APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast, na.rm = TRUE)-totalHDD)/totalHDD * 100
+    
+    # Metric 2: Aggregated Weighted MAPE
+    weighted_MAPE_MRP <- sum(w*temp_data$err_MRP, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    # Metric 3: MASE: Mean Absolute Scaled Error
+    MASE_wk_MRP <- mean(abs(temp_data$err_MRP/temp_data$err_MRP), na.rm = TRUE)
+    # Metric 4 Aggregated Absolute Scaled Error
+    AASE_fcastPeriod_MRP <- abs(sum(temp_data$err_MRP, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
+    # Metric 5: Mean RMSE by Week
+    RMSE_wk_MRP <- RMSE(temp_data$err_MRP)
+    # Metric 6: Aggregatred RMSE/MAE per week
+    RMSE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast, na.rm = TRUE)-totalHDD)/nrow(temp_data)
+    # Metric 6.2: MAE # The same as 6
+    MAE_wk_MRP <- mean(temp_data$err_MRP, na.rm = TRUE)
+    
+    MRP <- c(mape_wk_MRP,WAPE_MRP,APE_fcastPeriod_MRP,weighted_MAPE_MRP,MASE_wk_MRP,AASE_fcastPeriod_MRP,RMSE_wk_MRP,RMSE_fcastPeriod_MRP,MAE_wk_MRP)
     
     # Prophet
     # Weekly Error Calculation
     mape_wk_Prophet<- weighted.mean(temp_data$ape_Prophet,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet)-totalHDD)/totalHDD * 100
     
     # ARIMA
     # Weekly Error Calculation
     mape_wk_ARIMA<- weighted.mean(temp_data$ape_ARIMA,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA)-totalHDD)/totalHDD * 100
     
     # TBATS
     # Weekly Error Calculation
     mape_wk_TBATS<- weighted.mean(temp_data$ape_TBATS,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS)-totalHDD)/totalHDD * 100
     
     # timetk lm
     # Weekly Error Calculation
     mape_wk_lm<- weighted.mean(temp_data$ape_lm,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_lm <- abs(sum(temp_data$timetk_lm)-totalHDD)/totalHDD * 100
     
     # timetk RF
     # Weekly Error Calculation
     mape_wk_RF<- weighted.mean(temp_data$ape_RF,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_RF <- abs(sum(temp_data$timetk_RF)-totalHDD)/totalHDD * 100
     
     # timetk Xgboost
     # Weekly Error Calculation
     mape_wk_Xgboost<- weighted.mean(temp_data$ape_Xgboost,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Xgboost <- abs(sum(temp_data$timetk_Xgboost)-totalHDD)/totalHDD * 100
     
     # Ensemble
     # Weekly Error Calculation
     mape_wk_Ensemble<- weighted.mean(temp_data$ape_Ensemble,temp_data$HDD_QTY, na.rm = TRUE)
     # 12-week Error Calculation
-    APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-sum(temp_data$HDD_QTY))/sum(temp_data$HDD_QTY) * 100
+    APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble)-totalHDD)/totalHDD * 100
     
     OneRow <- c(CFGgroups2[i_CFG],Region.groups[i_Region],mape_wk_MRP,APE_fcastPeriod_MRP,mape_wk_Prophet,APE_fcastPeriod_Prophet,mape_wk_ARIMA,APE_fcastPeriod_ARIMA,mape_wk_TBATS,APE_fcastPeriod_TBATS,mape_wk_lm,APE_fcastPeriod_lm,mape_wk_RF,APE_fcastPeriod_RF,mape_wk_Xgboost,APE_fcastPeriod_Xgboost,mape_wk_Ensemble,APE_fcastPeriod_Ensemble)
     mape_wk <- as.numeric(OneRow[seq(3,18,2)])
