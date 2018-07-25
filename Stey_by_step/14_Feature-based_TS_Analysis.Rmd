@@ -1,0 +1,76 @@
+---
+title: "Feature-based_TS_Analysis"
+author: "Yao"
+date: "July 25, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggthemes)
+library(feather)
+library(tsfeatures)
+library(anomalous)
+library(forecast)
+library(seer)
+```
+Each CFG is a time series and we will conduct a multiple time series analysis.
+
+```{r load the data}
+hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+
+# Weekly data
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+
+# Prepare a list of univariate time series
+spread(select(HDD_Weekly,-Fiscal_Wk),Fiscal_Wk_End_Date,HDD_QTY) %>%
+  ungroup() %>% select(-CFG) %>% t() -> TSdata
+TSdata.list <- lapply(data.frame(TSdata),ts,frequency=365.25/7)
+```
+
+```{r Test Examples}
+yahoo <- TSdata.list # This does not work for now.
+hwl <- bind_cols(
+         tsfeatures(yahoo,
+           c("acf_features","entropy","lumpiness",
+             "flat_spots","crossing_points")),
+         tsfeatures(yahoo,"stl_features", s.window='periodic', robust=TRUE),
+         tsfeatures(yahoo, "max_kl_shift", width=48),
+         tsfeatures(yahoo,
+           c("mean","var"), scale=FALSE, na.rm=TRUE),
+         tsfeatures(yahoo,
+           c("max_level_shift","max_var_shift"), trim=TRUE)) %>%
+  select(mean, var, x_acf1, trend, linearity, curvature, 
+         seasonal_strength, peak, trough,
+         entropy, lumpiness, spike, max_level_shift, max_var_shift, flat_spots,
+         crossing_points, max_kl_shift, time_kl_shift)
+```
+
+Every Col should be one time series.
+
+```{r}
+lambda_stl <- function(x,...) {
+  lambda <- forecast::BoxCox.lambda(x, lower=0, upper=1, method='loglik')
+  y <- forecast::BoxCox(x, lambda)
+  c(stl_features(y,s.window='periodic', robust=TRUE, ...),
+    lambda=lambda)
+}
+
+TSFeatures <- bind_cols(
+  tsfeatures(TSdata.list, c("frequency", "entropy")),
+  tsfeatures(TSdata.list, "lambda_stl", scale=FALSE)) %>% # This does not work for now.
+  select(frequency, entropy, trend, seasonal_strength, e_acf1, lambda) %>%
+  replace_na(list(seasonal_strength=0)) %>%
+  rename(
+    Frequency = frequency,
+    Entropy = entropy,
+    Trend = trend,
+    Season = seasonal_strength,
+    ACF1 = e_acf1,
+    Lambda = lambda) %>%
+  mutate(Period = as.factor(Frequency))
+```
+
+

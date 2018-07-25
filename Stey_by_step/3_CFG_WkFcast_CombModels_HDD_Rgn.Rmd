@@ -119,13 +119,13 @@ myforecast <- function(temp_data){
     tk_augment_timeseries_signature()
   yhat_test <- predict(fit, newdata = test_augmented)
   AvailableWeek <- nrow(test)
-  lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  lm_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'lm',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Random Forest
   # Model using the augmented features
   fit <- randomForest(y ~ ., data = na.omit(temp))
   yhat_test <- predict(fit, newdata = test_augmented)
-  RF_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  RF_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'RF',rep(NA,WeekAhead),yhat_test,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   # Xgboost
   # Train the xgboost model using the "xgboost" function
@@ -134,7 +134,7 @@ myforecast <- function(temp_data){
   # Make the predictions on the test data
   temp_test <- test_augmented[,colnames(temp)]
   preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-  Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'timetk_Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
+  Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],'Xgboost',rep(NA,WeekAhead),preds,rep(NA,forecastPeriodLen-WeekAhead-AvailableWeek))
   
   return(rbind(TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast))
 }
