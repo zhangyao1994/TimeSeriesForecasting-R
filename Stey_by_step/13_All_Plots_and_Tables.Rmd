@@ -5,8 +5,13 @@ date: "July 24, 2018"
 output: html_document
 ---
 
+There is one problem in this output html.
+Sometime the ggplotly will overlap with the dataTable.
+There is no problem with only ggplotly figures or only dataTables. Let it be for now.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
 library(tidyverse)
 library(ggthemes)
 options(scipen = 999)
@@ -18,8 +23,8 @@ library(scales) # for percent
 
 # fast data format
 library(feather)
-
 library(DT)
+library(formattable)
 ```
 
 ```{r}
@@ -28,17 +33,29 @@ CFG_fcast.joined <- read_feather("~/Yao_Rdata/CFG_fcast_joined.feather")
 
 # Get all CFG names, all Region names, and all Model names
 CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
-len_CFG <- length(CFGgroups)
+len_CFG <- 2 # length(CFGgroups)
 Region.groups <- levels(factor(CFG_fcast.joined$Region))
 len_Region <- length(Region.groups)
 Model.groups <- levels(factor(CFG_fcast.joined$Model))
 
-results <- read_feather("~/Yao_Rdata/MAPE_weighted.feather")
+results <- read_feather("~/Yao_Rdata/EvaluationResults.feather")
+
+# reorder by column name
+results.ordered <- results[c("CFG", "Region", "Model","MAE_wk","AAE_fcastPeriod_per_week","RMSE_wk","WAPE","APE_fcastPeriod","Aggregated_weighted_APE","MASE_wk","AASE_fcastPeriod")]
+colnames(results.ordered)[colnames(results.ordered)=="AAE_fcastPeriod_per_week"] <- "AAE_wk"
+colnames(results.ordered)[colnames(results.ordered)=="APE_fcastPeriod"] <- "AAPE"
+colnames(results.ordered)[colnames(results.ordered)=="Aggregated_weighted_APE"] <- "AWAPE"
+colnames(results.ordered)[colnames(results.ordered)=="AASE_fcastPeriod"] <- "AASE"
+# indx <- c("WAPE","APE_fcastPeriod","Aggregated_weighted_APE")
+# results.ordered[indx] <- lapply(results.ordered[indx]/100,percent, format = "d")
+fcol_style <- formatter("span",
+                       style = x ~ style(color = ifelse(rank(x) <= 3, "green", "gray")),
+                       x ~ sprintf("%.0f (rank: %02d)", x, rank(x)))
 
 # For each CFG and each Region
-l_ggplotly <- htmltools::tagList()
+l_ggplotly_wDT <- htmltools::tagList()
 num <- 1
-for (i_CFG in 1:len_CFG) {
+for (i_CFG in 2:len_CFG) {
   # For each Region
   for (i_Region in 1:len_Region){
     # HDD Weekly Sales for certain CFG and selected Region
@@ -56,16 +73,29 @@ for (i_CFG in 1:len_CFG) {
           scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01')) +
           scale_y_continuous(label=comma) + expand_limits(y = 0)
         #print(ggplotly(p_week)) # Need to save these and then show them together
-        l_ggplotly[[num]] <- ggplotly(p_week,width = 999)
+        l_ggplotly_wDT[[num]] <- ggplotly(p_week,width = 999)
         num <- num + 1
       }
     }
     
-    temp_data <- filter(results,CFG==CFGgroups[i_CFG],Region==Region.groups[i_Region])
-    l_ggplotly[[num]] <- datatable(temp_data) # Need to figure out how to show these
+    temp_data <- filter(results.ordered,CFG==CFGgroups[i_CFG],Region==Region.groups[i_Region])
+    
+    widget_formattable <- formattable(temp_data, digits = 2, list(
+      MAE_wk = fcol_style,
+      AAE_wk = fcol_style,
+      RMSE_wk = fcol_style,
+      WAPE = fcol_style,
+      AAPE = fcol_style,
+      AWAPE = fcol_style,
+      MASE_wk = fcol_style,
+      AASE = fcol_style
+    ))
+    
+    l_ggplotly_wDT[[num]] <- as.datatable(widget_formattable)
     num <- num + 1
   }
 }
-l_ggplotly
+
+l_ggplotly_wDT
 ```
 
