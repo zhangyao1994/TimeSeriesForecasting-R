@@ -73,4 +73,20 @@ TSFeatures <- bind_cols(
   mutate(Period = as.factor(Frequency))
 ```
 
+```{r Test Seer}
+library(Mcomp)
+data(M3)
+yearly_m3 <- subset(M3, "yearly")
+m3y <- M3[1:2]
+
+cal_features(subset(M3,"yearly"),
+h=6, database="M3", highfreq=FALSE) %>%
+head()
+```
+
+```{r Selecting a forecasting model using seer}
+fcast_accuracy(M3[1:4],
+models=c("arima","ets","rw","rwd","theta","nn","snaive"),
+database="M3", cal_MASE, h=6, length_out=1)
+```
 
