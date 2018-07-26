@@ -6,7 +6,8 @@ output: html_document
 ---
 
 This is the parallel function version using weekly data and different models, including TBATS, Prophet, ARIMA, lm, and Random Forest, to forecast one quarter HDD demand with one quarter ahead and with cross-validation.
-Update on 7/3/2018. Do not use FY19Q1 to train models.
+Updated on 7/3/2018. Do not use FY19Q1 to train models.
+Updated on 7/26/2018. Add more models!
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -29,6 +30,7 @@ library(randomForest)
 
 # Load TBATS package, as well as for ARIMA
 library(forecast)
+library(forecTheta) # Theta
 
 # Load Facebook Prophet package
 library(Rcpp)
@@ -54,9 +56,14 @@ registerDoParallel(no_cores)
 ```{r load the data}
 hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
 
-# Weekly data
+# Weekly data For each Region
 hdd_qty %>% group_by(CFG, RGN_DESC, Fiscal_Wk_End_Date,Fiscal_Wk,Fiscal_Qtr) %>%
   summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly
+# Weekly data Globally
+hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk,Fiscal_Qtr) %>%
+  summarise(HDD_QTY = sum(PART_QTY)) -> HDD_Weekly_Global
+HDD_Weekly_Global$RGN_DESC <- 'Global'
+HDD_Weekly_Global %>% full_join(HDD_Weekly) -> HDD_Weekly
 ```
 
 ```{r Forecast Function}
@@ -147,6 +154,51 @@ myforecast <- function(){
     preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
     Xgboost_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'Xgboost',tail(preds,Fcast_Wk_num))
     
+    # ets
+    fit <- ets(HDD.ts)
+    fcast <- forecast(fit,h=forecastPeriodLen)
+    ets_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'ets',tail(fcast$mean,Fcast_Wk_num))
+   
+    # rw: random walk
+    rw_fit <- rwf(HDD.ts,drift=FALSE, h=forecastPeriodLen)
+    forecastRW <- forecast(rw_fit)$mean
+    rw_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'rw',tail(forecastRW,Fcast_Wk_num))
+    
+    # rwd: random walk with drift
+    rw_fit <- rwf(HDD.ts,drift=TRUE, h=forecastPeriodLen)
+    forecastRWD <- forecast(rw_fit)$mean
+    rwd_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'rwd',tail(forecastRWD,Fcast_Wk_num))
+    
+    # wn: white noise # Calculate accuracy measure based on white noise process
+    fit_WN <- auto.arima(HDD.ts, d=0, D=0, max.p=0, max.q = 0,
+                     max.Q=0, max.P = 0)
+    forecastWN <- forecast(fit_WN,h=forecastPeriodLen)$mean
+    wn_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'wn',tail(forecastWN,Fcast_Wk_num))
+    
+    # theta: standard theta method
+    # if (i_Qtr>2) {
+    #   forecastTheta <- stheta(HDD.ts,h=forecastPeriodLen, s='additive')$mean
+    #   theta_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'theta',tail(forecastTheta,Fcast_Wk_num))
+    # }
+    # Error in decompose(y, type = s_type) : 
+    #   time series has no or less than 2 periods
+
+    # stlar
+    forecastSTLAR <- stlar(HDD.ts,h=forecastPeriodLen)$mean
+    
+    # nn
+    fit_nnetar <- forecast::nnetar(training)
+    forecastnnetar <- forecast(fit_nnetar, h=h)$mean
+
+    # snaive
+    forecastSNAIVE <- forecast::snaive(training, h=length(test))$mean
+    
+    # mstlarima
+    fit_stlf <- forecast::stlf(training, method=mtd)
+    forecastMSTL <- forecast(fit_stlf, h=length(test))$mean
+    
+    # mstlets
+    
     OneQtrFcast <- rbind(Truth,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast)
     MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
   }
@@ -155,7 +207,7 @@ myforecast <- function(){
 ```
 
 
-```{r Run the fuctions parallel}
+```{r Run the fuctions parallelly}
 HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
 CFGgroups <- levels(factor(HDD_Weekly$CFG))
 len <- length(CFGgroups)
@@ -166,7 +218,7 @@ Fcast_Qtr <- c("FY17Q4","FY18Q1","FY18Q2","FY18Q3","FY18Q4","FY19Q1","FY19Q2") #
 
 Comb_fcast <- data.frame()
 for (i_Region in 1:num.Regions){
-  Comb_fcast0 <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+  Comb_fcast0 <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','forecTheta','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
     # Forecast for each CFG
     temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG],RGN_DESC==Regions[i_Region])
     oneCFG_fcast <- myforecast()

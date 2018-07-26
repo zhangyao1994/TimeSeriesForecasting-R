@@ -88,5 +88,13 @@ head()
 fcast_accuracy(M3[1:4],
 models=c("arima","ets","rw","rwd","theta","nn","snaive"),
 database="M3", cal_MASE, h=6, length_out=1)
+
+# fcast_accuracy(TSdata.list[6],
+# models=c("ets", "arima", "rw", "rwd", "wn", "theta",
+#   "stlar", "nn", "snaive", "mstlarima", "mstlets", "tbats"),
+# database="other", cal_MASE, h=6, length_out=1)
+# 
+# tslist <- TSdata.list[6]
+# training=head_ts(tslist,6)
 ```
 
