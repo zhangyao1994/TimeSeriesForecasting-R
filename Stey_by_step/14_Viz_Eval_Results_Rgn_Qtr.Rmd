@@ -1,0 +1,65 @@
+---
+title: "14 Viz Evaluation Results by Region and Quarter and Metric"
+author: "Yao"
+date: "July 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(ggthemes)
+options(scipen = 999)
+library(lubridate)
+library(tidyquant)
+library(plotly)
+
+library(scales) # for percent
+
+# fast data format
+library(feather)
+```
+
+
+```{r fig.height=100}
+######
+results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
+
+results %>% gather(key = "Metrics", value = 'Value',MAPE_wk:MAE_wk) %>%
+  group_by(Region,Model,Metrics,Quarter) %>% 
+  summarise(MeanError=mean(Value, na.rm = TRUE)) -> results4plot
+
+colnames(results4plot)[colnames(results4plot)=="RandomForest"] <- "RF"
+# Get all Region names, quater names, and all Metric names
+Region.groups <- levels(factor(results4plot$Region))
+len_Region <- length(Region.groups)
+Quarter.groups <- levels(factor(results4plot$Quarter))
+len_Qtr <- length(Quarter.groups)
+Metrics.groups <- levels(factor(results4plot$Metrics))
+len_Metrics <- length(Metrics.groups)
+# Plot one by one then
+l_ggplotly <- htmltools::tagList()
+if (1){
+  num <- 1
+  # For each CFG
+  for (i_Metrics in 1:len_Metrics) {
+    # For each Region
+    for (i_Region in 1:len_Region){
+      # For each Quarter
+      for (i_Qtr in 1:len_Qtr){
+        p <- results4plot %>% filter(Metrics==Metrics.groups[i_Metrics],Region==Region.groups[i_Region],Quarter==Quarter.groups[i_Qtr],Model!='LinearModel') %>%
+          ggplot(aes(Model,MeanError,fill=Model)) +
+          geom_bar(stat = "identity") +
+          labs(title = paste(Region.groups[i_Region],Quarter.groups[i_Qtr],Metrics.groups[i_Metrics]), x = "Models", y = 'Metric Value') + 
+          theme_minimal(base_size = 14) + 
+          scale_fill_tableau('tableau20')
+        l_ggplotly[[num]] <- ggplotly(p,width = 999)
+        num <- num + 1
+      }
+    }
+  }
+}
+l_ggplotly
+```
+

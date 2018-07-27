@@ -93,6 +93,7 @@ myforecast <- function(){
     }
     
     Truth <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'HDD_QTY',tail(test$y,Fcast_Wk_num))
+    Naive <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'naive',tail(train$y,Fcast_Wk_num))
     
     # Add time series signature # For the last date of train region
     train_augmented <- train[nrow(train),] %>%
@@ -202,7 +203,7 @@ myforecast <- function(){
     
     # mstlets
     
-    OneQtrFcast <- rbind(Truth,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,stlar_fcast,nn_fcast)
+    OneQtrFcast <- rbind(Truth,Naive,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,stlar_fcast,nn_fcast)
     MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
   }
   return(MultiQtr_Fcast)

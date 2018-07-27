@@ -162,8 +162,7 @@ CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<="FY19W22") %>%
   # Calulate RMSE: sqrt(mean(error^2)) #
 
 # Function that returns Root Mean Squared Error
-RMSE <- function(error)
-{
+RMSE <- function(error){
     sqrt(mean(error^2,na.rm = TRUE))
 }
 
