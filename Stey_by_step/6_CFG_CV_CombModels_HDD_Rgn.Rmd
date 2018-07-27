@@ -45,6 +45,7 @@ library(foreach)
 library(doParallel)
 
 library(feather)
+library(seer)
  
 # Calculate the number of cores
 no_cores <- detectCores() - 1
@@ -85,7 +86,7 @@ myforecast <- function(){
     # print(forecastPeriodLen)
     
     Fcast_Wk_num <- 13
-    if (nrow(test) < Fcast_Wk_num | nrow(train)<2){ 
+    if (nrow(test) < Fcast_Wk_num | nrow(train)<nrow(test)){ 
       OneQtrFcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],rep(NA,Fcast_Wk_num+1))
       MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
       next
@@ -185,21 +186,23 @@ myforecast <- function(){
 
     # stlar
     forecastSTLAR <- stlar(HDD.ts,h=forecastPeriodLen)$mean
+    stlar_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'stlar',tail(forecastSTLAR,Fcast_Wk_num))
     
     # nn
-    fit_nnetar <- forecast::nnetar(training)
-    forecastnnetar <- forecast(fit_nnetar, h=h)$mean
+    fit_nnetar <- nnetar(HDD.ts)
+    forecastnnetar <- forecast(fit_nnetar, h=forecastPeriodLen)$mean
+    nn_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],Fcast_Qtr[i_Qtr+1],'nn',tail(forecastnnetar,Fcast_Wk_num))
 
     # snaive
-    forecastSNAIVE <- forecast::snaive(training, h=length(test))$mean
+    # forecastSNAIVE <- snaive(HDD.ts, h=forecastPeriodLen)$mean
     
-    # mstlarima
-    fit_stlf <- forecast::stlf(training, method=mtd)
-    forecastMSTL <- forecast(fit_stlf, h=length(test))$mean
+    # mstlarima # This does not work.
+    # fit_stlf <- stlf(HDD.ts, method=mtd)
+    # forecastMSTL <- forecast(fit_stlf, h=forecastPeriodLen)$mean
     
     # mstlets
     
-    OneQtrFcast <- rbind(Truth,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast)
+    OneQtrFcast <- rbind(Truth,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,stlar_fcast,nn_fcast)
     MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
   }
   return(MultiQtr_Fcast)
@@ -218,7 +221,7 @@ Fcast_Qtr <- c("FY17Q4","FY18Q1","FY18Q2","FY18Q3","FY18Q4","FY19Q1","FY19Q2") #
 
 Comb_fcast <- data.frame()
 for (i_Region in 1:num.Regions){
-  Comb_fcast0 <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','forecTheta','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+  Comb_fcast0 <- foreach(i_CFG=1:len, .combine=rbind, .packages=c('tidyverse','forecast','forecTheta','seer','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
     # Forecast for each CFG
     temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG],RGN_DESC==Regions[i_Region])
     oneCFG_fcast <- myforecast()
