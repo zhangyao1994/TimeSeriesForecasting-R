@@ -465,7 +465,7 @@ write_feather(results, path)
 write_excel_csv(results,'~/Yao_Rdata/Eval_Results_CV.csv')
 ```
 
-```{r fig.height=100}
+```{r fig.height=100, eval=FALSE, include=FALSE, r fig.height=100}
 ######
 results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
 
@@ -506,7 +506,7 @@ if (1){
 l_ggplotly
 ```
 
-```{r Attainment Rates}
+```{r Attainment Rates, eval=FALSE, include=FALSE}
 # Overall evaluatiion for all CFGs
 results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
 
@@ -530,6 +530,7 @@ results4AR %>% group_by(Model) %>%
             AttainmentRate_WAPE=Attainment_Rate_Cal(WAPE)) -> AttainmentRate.results
 
 # Viz the errors
+colnames(results4AR)[colnames(results4AR)=="RandomForest"] <- "RF"
 ggplotly(AttainmentRate.results %>%
            ggplot(aes(Model,AttainmentRate_AAPE)) +
            geom_bar(stat = "identity") +
