@@ -45,10 +45,10 @@ results4AR %>% group_by(Model) %>%
             AttainmentRate_WAPE=Attainment_Rate_Cal(WAPE)) -> AttainmentRate.results
 
 # Viz the errors
-ggplotly(AttainmentRate.results %>%
+p <- ggplotly(AttainmentRate.results %>%
            ggplot(aes(Model,AttainmentRate_AAPE)) +
            geom_bar(stat = "identity") +
-           labs(title = paste('Forecast Accuracy of Four Quarter Cross-Validation'), x = "Models", y = 'Attainment Rates (%)') + 
+           labs(title = paste('Forecast Accuracy of Cross-Validation'), x = "Models", y = 'Attainment Rates (%)') + 
            theme_minimal(base_size = 14) + 
            scale_fill_tableau('tableau10medium'))
 ```
@@ -61,16 +61,16 @@ TotalHDD_FY18 <- filter(HDD_data,Fiscal_Yr=="FY18") %>% group_by(CFG) %>%
 # Weighted Attainment Rates
 # Consider all CFGs
 results4AR %>% group_by(Model) %>% left_join(TotalHDD_FY18) %>%
-  summarize(WeightedAttainmentRate_AAPE=sum(ifelse(APE_fcastPeriod<=20,1,0)*weight),
-            WeightedAttainmentRate_AWAPE=sum(ifelse(Aggregated_weighted_APE<=20,1,0)*weight),
-            WeightedAttainmentRate_MAPE_wk=sum(ifelse(MAPE_wk<=20,1,0)*weight),
-            WeightedAttainmentRate_WAPE=sum(ifelse(WAPE<=20,1,0)*weight)) -> WeightedAttainmentRate.results
+  summarize(WeightedAttainmentRate_AAPE=sum(ifelse(APE_fcastPeriod<=20,1,0)*weight*100),
+            WeightedAttainmentRate_AWAPE=sum(ifelse(Aggregated_weighted_APE<=20,1,0)*weight*100),
+            WeightedAttainmentRate_MAPE_wk=sum(ifelse(MAPE_wk<=20,1,0)*weight*100),
+            WeightedAttainmentRate_WAPE=sum(ifelse(WAPE<=20,1,0)*weight*100)) -> WeightedAttainmentRate.results
 
 # Viz the errors
-ggplotly(WeightedAttainmentRate.results %>%
+p <- ggplotly(WeightedAttainmentRate.results %>%
            ggplot(aes(Model,WeightedAttainmentRate_AAPE)) +
            geom_bar(stat = "identity") +
-           labs(title = paste('Forecast Accuracy of Four Quarter Cross-Validation'), x = "Models", y = 'Weighted Attainment Rates (%)') + 
+           labs(title = paste('Forecast Accuracy of Cross-Validation'), x = "Models", y = 'Weighted Attainment Rates (%)') + 
            theme_minimal(base_size = 14) + 
            scale_fill_tableau('tableau10medium'))
 ```
