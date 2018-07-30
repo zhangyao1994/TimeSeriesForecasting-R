@@ -30,7 +30,7 @@ blank_theme <- theme_minimal()+
 
 ```
 
-## Clean HDD Demand Data Explorary Analytics
+## HDD Demand Data Explorary Analytics
 
 I got the cleaned HDD demand data by CFG, Region, and other attributes from Cinkie. I can use this to jump start the HDD demand forecasting exercise.
 ```{r load the data}
