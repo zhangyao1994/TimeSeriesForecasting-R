@@ -53,6 +53,28 @@ ggplotly(AttainmentRate.results %>%
            scale_fill_tableau('tableau10medium'))
 ```
 
+```{r Weighted Attainment Rates}
+HDD_data <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
+TotalHDD_FY18 <- filter(HDD_data,Fiscal_Yr=="FY18") %>% group_by(CFG) %>%
+  summarise(CFG_QTY=sum(PART_QTY)) %>% mutate(weight=CFG_QTY/sum(CFG_QTY))
+
+# Weighted Attainment Rates
+# Consider all CFGs
+results4AR %>% group_by(Model) %>% left_join(TotalHDD_FY18) %>%
+  summarize(WeightedAttainmentRate_AAPE=sum(ifelse(APE_fcastPeriod<=20,1,0)*weight),
+            WeightedAttainmentRate_AWAPE=sum(ifelse(Aggregated_weighted_APE<=20,1,0)*weight),
+            WeightedAttainmentRate_MAPE_wk=sum(ifelse(MAPE_wk<=20,1,0)*weight),
+            WeightedAttainmentRate_WAPE=sum(ifelse(WAPE<=20,1,0)*weight)) -> WeightedAttainmentRate.results
+
+# Viz the errors
+ggplotly(WeightedAttainmentRate.results %>%
+           ggplot(aes(Model,WeightedAttainmentRate_AAPE)) +
+           geom_bar(stat = "identity") +
+           labs(title = paste('Forecast Accuracy of Four Quarter Cross-Validation'), x = "Models", y = 'Weighted Attainment Rates (%)') + 
+           theme_minimal(base_size = 14) + 
+           scale_fill_tableau('tableau10medium'))
+```
+
 
 ```{r}
 ######
@@ -61,12 +83,7 @@ results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
 results %>% gather(key = "Metrics", value = 'Value',MAPE_wk:MAE_wk) %>%
   group_by(Region,Model,Metrics,Quarter) %>% 
   summarise(MeanError=mean(Value, na.rm = TRUE)) -> results4plot
-results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
 
-results %>% gather(key = "Metrics", value = 'Value',MAPE_wk:MAE_wk) %>%
-  group_by(Region,Model,Metrics,Quarter) %>% 
-  summarise(MeanError=mean(Value, na.rm = TRUE)) -> results4plot
- 
 # Get all Region names, quater names, and all Metric names
 Region.groups <- levels(factor(results4plot$Region))
 len_Region <- length(Region.groups)
@@ -74,9 +91,9 @@ Quarter.groups <- levels(factor(results4plot$Quarter))
 len_Qtr <- length(Quarter.groups)
 Metrics.groups <- levels(factor(results4plot$Metrics))
 len_Metrics <- length(Metrics.groups)
-# Plot one by one then
+# Plot one by one then: 9*4*4 Too many plots to see.
 l_ggplotly <- htmltools::tagList()
-if (1){
+if (0){
   num <- 1
   # For each CFG
   for (i_Metrics in 1:len_Metrics) {
@@ -85,41 +102,10 @@ if (1){
       # For each Quarter
       for (i_Qtr in 1:len_Qtr){
         p <- results4plot %>% filter(Metrics==Metrics.groups[i_Metrics],Region==Region.groups[i_Region],Quarter==Quarter.groups[i_Qtr],Model!='LinearModel') %>%
-          ggplot(aes(Model,MeanError,fill=Model)) +
+          ggplot(aes(Model,MeanError)) +
           geom_bar(stat = "identity") +
           labs(title = paste(Region.groups[i_Region],Quarter.groups[i_Qtr],Metrics.groups[i_Metrics]), x = "Models", y = 'Metric Value') + 
-          theme_minimal(base_size = 14) + 
-          scale_fill_tableau('tableau20')
-        l_ggplotly[[num]] <- ggplotly(p,width = 999)
-        num <- num + 1
-      }
-    }
-  }
-}
-l_ggplotly
-# Get all Region names, quater names, and all Metric names
-Region.groups <- levels(factor(results4plot$Region))
-len_Region <- length(Region.groups)
-Quarter.groups <- levels(factor(results4plot$Quarter))
-len_Qtr <- length(Quarter.groups)
-Metrics.groups <- levels(factor(results4plot$Metrics))
-len_Metrics <- length(Metrics.groups)
-# Plot one by one then
-l_ggplotly <- htmltools::tagList()
-if (1){
-  num <- 1
-  # For each CFG
-  for (i_Metrics in 1:len_Metrics) {
-    # For each Region
-    for (i_Region in 1:len_Region){
-      # For each Quarter
-      for (i_Qtr in 1:len_Qtr){
-        p <- results4plot %>% filter(Metrics==Metrics.groups[i_Metrics],Region==Region.groups[i_Region],Quarter==Quarter.groups[i_Qtr],Model!='LinearModel') %>%
-          ggplot(aes(Model,MeanError,fill=Model)) +
-          geom_bar(stat = "identity") +
-          labs(title = paste(Region.groups[i_Region],Quarter.groups[i_Qtr],Metrics.groups[i_Metrics]), x = "Models", y = 'Metric Value') + 
-          theme_minimal(base_size = 14) + 
-          scale_fill_tableau('tableau20')
+          theme_minimal(base_size = 14)
         l_ggplotly[[num]] <- ggplotly(p,width = 999)
         num <- num + 1
       }
