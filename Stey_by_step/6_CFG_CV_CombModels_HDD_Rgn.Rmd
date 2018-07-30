@@ -73,7 +73,7 @@ myforecast <- function(){
   n <- nrow(df)
   
   MultiQtr_Fcast <- list()
-  for (i_Qtr in 1:4){
+  for (i_Qtr in 1:5){
     # Split into training and test sets
     # i=1: At the beginning of FY17Q4, forecast FY18Q1 and FY17Q4 and only calculate the accuracy of FY18Q1
     Fcast_TimePoint <- filter(temp_data,Fiscal_Qtr==Fcast_Qtr[i_Qtr])$date[1]
