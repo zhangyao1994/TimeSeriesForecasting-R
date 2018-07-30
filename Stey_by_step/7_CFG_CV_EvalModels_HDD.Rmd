@@ -50,7 +50,7 @@ Quarter.groups <- levels(factor(All_fcast$Quarter))
 len_Qtr <- length(Quarter.groups)
 
 l_ggplotly <- htmltools::tagList()
-if (1){
+if (0){
   num <- 1
   # For each CFG
   for (i_CFG in 1:len_CFG) {
@@ -80,8 +80,7 @@ l_ggplotly
 # Data transformation for error calculations
 All_fcast[!is.na(All_fcast$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
-# CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Prophet,TBATS,_RF,_Xgboost), na.rm = TRUE) # removed _lm
-# Will dertermine the Ensemble after evaluating all models.
+CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,naive,stlar,Xgboost), na.rm = TRUE) # select the generally good models
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- CFG_fcast %>%
@@ -99,6 +98,7 @@ CFG_fcast <- CFG_fcast %>%
          err_stlar = abs(HDD_QTY - stlar),
          err_wn = abs(HDD_QTY - wn),
          err_naive = abs(HDD_QTY - naive),
+         err_Ensemble = abs(HDD_QTY - Ensemble),
          # calculate absolute percent error
          ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100),
          ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100),
@@ -112,10 +112,8 @@ CFG_fcast <- CFG_fcast %>%
          ape_rwd = abs((HDD_QTY - rwd)/HDD_QTY * 100),
          ape_stlar = abs((HDD_QTY - stlar)/HDD_QTY * 100),
          ape_wn = abs((HDD_QTY - wn)/HDD_QTY * 100),
-         ape_naive = abs((HDD_QTY - naive)/HDD_QTY * 100)) #%>%
-  
-  # # calculate absolute percent error for Ensemble
-  # mutate(ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
+         ape_naive = abs((HDD_QTY - naive)/HDD_QTY * 100),
+         ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
 
 # Function that returns Root Mean Squared Error
 RMSE <- function(error){
@@ -236,7 +234,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       # Metric 6.2: MAE # The same as 6
       MAE_wk_lm <- mean(temp_data$err_lm, na.rm = TRUE)
       
-      lm <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'LinearModel',mape_wk_lm,WAPE_lm,APE_fcastPeriod_lm,Aggregated_weighted_APE_lm,MASE_wk_lm,AASE_fcastPeriod_lm,RMSE_wk_lm,AAE_fcastPeriod_per_week_lm,MAE_wk_lm)
+      lm <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'lm',mape_wk_lm,WAPE_lm,APE_fcastPeriod_lm,Aggregated_weighted_APE_lm,MASE_wk_lm,AASE_fcastPeriod_lm,RMSE_wk_lm,AAE_fcastPeriod_per_week_lm,MAE_wk_lm)
       
       #  RF
       # Metric 1: Weighted MAPE by Week / WAPE
@@ -259,7 +257,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       # Metric 6.2: MAE # The same as 6
       MAE_wk_RF <- mean(temp_data$err_RF, na.rm = TRUE)
       
-      RF <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'RandomForest',mape_wk_RF,WAPE_RF,APE_fcastPeriod_RF,Aggregated_weighted_APE_RF,MASE_wk_RF,AASE_fcastPeriod_RF,RMSE_wk_RF,AAE_fcastPeriod_per_week_RF,MAE_wk_RF)
+      RF <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'RF',mape_wk_RF,WAPE_RF,APE_fcastPeriod_RF,Aggregated_weighted_APE_RF,MASE_wk_RF,AASE_fcastPeriod_RF,RMSE_wk_RF,AAE_fcastPeriod_per_week_RF,MAE_wk_RF)
       
       # Xgboost
       # Metric 1: Weighted MAPE by Week / WAPE
@@ -445,7 +443,30 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
       
       naive <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'naive',mape_wk_naive,WAPE_naive,APE_fcastPeriod_naive,Aggregated_weighted_APE_naive,MASE_wk_naive,AASE_fcastPeriod_naive,RMSE_wk_naive,AAE_fcastPeriod_per_week_naive,MAE_wk_naive)
       
-      OneRow <- rbind(Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,stlar,wn,naive)
+      # Ensemble
+      # Metric 1: Weighted MAPE by Week / WAPE
+      mape_wk_Ensemble <- weighted.mean(temp_data$ape_Ensemble,temp_data$HDD_QTY, na.rm = TRUE)
+      # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
+      WAPE_Ensemble <- sum(temp_data$err_Ensemble, na.rm = TRUE)/totalHDD*100
+      # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
+      APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble, na.rm = TRUE)-totalHDD)/totalHDD * 100
+      
+      # Metric 2: Aggregated Weighted APE
+      Aggregated_weighted_APE_Ensemble <- sum(w*temp_data$err_Ensemble, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+      # Metric 3: MASE: Mean Absolute Scaled Error
+      MASE_wk_Ensemble <- mean(abs(temp_data$err_Ensemble/temp_data$err_naive), na.rm = TRUE)
+      # Metric 4 Aggregated Absolute Scaled Error
+      AASE_fcastPeriod_Ensemble <- abs(sum(temp_data$err_Ensemble, na.rm = TRUE)/sum(temp_data$err_Ensemble, na.rm = TRUE))
+      # Metric 5: Mean RMSE by Week
+      RMSE_wk_Ensemble <- RMSE(temp_data$err_Ensemble)
+      # Metric 6: Aggregatred RMSE/MAE per week
+      AAE_fcastPeriod_per_week_Ensemble <- abs(sum(temp_data$Ensemble, na.rm = TRUE)-totalHDD)/nrow(temp_data)
+      # Metric 6.2: MAE # The same as 6
+      MAE_wk_Ensemble <- mean(temp_data$err_Ensemble, na.rm = TRUE)
+      
+      Ensemble <- c(CFGgroups2[i_CFG],Region.groups[i_Region],Quarter.groups[i_Quarter],'Ensemble',mape_wk_Ensemble,WAPE_Ensemble,APE_fcastPeriod_Ensemble,Aggregated_weighted_APE_Ensemble,MASE_wk_Ensemble,AASE_fcastPeriod_Ensemble,RMSE_wk_Ensemble,AAE_fcastPeriod_per_week_Ensemble,MAE_wk_Ensemble)
+      
+      OneRow <- rbind(Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,stlar,wn,naive,Ensemble)
       OneCFG <- rbind(OneCFG,OneRow)
     }
   }
@@ -473,7 +494,6 @@ results %>% gather(key = "Metrics", value = 'Value',MAPE_wk:MAE_wk) %>%
   group_by(Region,Model,Metrics,Quarter) %>% 
   summarise(MeanError=mean(Value, na.rm = TRUE)) -> results4plot
 
-colnames(results4plot)[colnames(results4plot)=="RandomForest"] <- "RF"
 # Get all Region names, quater names, and all Metric names
 Region.groups <- levels(factor(results4plot$Region))
 len_Region <- length(Region.groups)
