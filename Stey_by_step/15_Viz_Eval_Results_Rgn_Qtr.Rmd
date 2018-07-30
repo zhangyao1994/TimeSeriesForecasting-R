@@ -25,7 +25,7 @@ library(feather)
 # Overall evaluatiion for all CFGs
 results <- read_feather("~/Yao_Rdata/EvaluationResults_CV.feather")
 
-results %>% filter(Region=='Global') %>%
+results %>% filter(Region=='Global',Quarter!='FY19Q1') %>%
   gather(key = "Metrics", value = 'Value',MAPE_wk:MAE_wk) %>%
   group_by(CFG,Model,Metrics) %>% 
   summarise(MeanError=mean(Value, na.rm = TRUE)) %>%
@@ -61,10 +61,10 @@ TotalHDD_FY18 <- filter(HDD_data,Fiscal_Yr=="FY18") %>% group_by(CFG) %>%
 # Weighted Attainment Rates
 # Consider all CFGs
 results4AR %>% group_by(Model) %>% left_join(TotalHDD_FY18) %>%
-  summarize(WeightedAttainmentRate_AAPE=sum(ifelse(APE_fcastPeriod<=20,1,0)*weight*100),
-            WeightedAttainmentRate_AWAPE=sum(ifelse(Aggregated_weighted_APE<=20,1,0)*weight*100),
-            WeightedAttainmentRate_MAPE_wk=sum(ifelse(MAPE_wk<=20,1,0)*weight*100),
-            WeightedAttainmentRate_WAPE=sum(ifelse(WAPE<=20,1,0)*weight*100)) -> WeightedAttainmentRate.results
+  summarize(WeightedAttainmentRate_AAPE=sum(ifelse(APE_fcastPeriod<=20,1,0)*weight*100, na.rm = TRUE),
+            WeightedAttainmentRate_AWAPE=sum(ifelse(Aggregated_weighted_APE<=20,1,0)*weight*100, na.rm = TRUE),
+            WeightedAttainmentRate_MAPE_wk=sum(ifelse(MAPE_wk<=20,1,0)*weight*100, na.rm = TRUE),
+            WeightedAttainmentRate_WAPE=sum(ifelse(WAPE<=20,1,0)*weight*100, na.rm = TRUE)) -> WeightedAttainmentRate.results
 
 # Viz the errors
 p <- ggplotly(WeightedAttainmentRate.results %>%
