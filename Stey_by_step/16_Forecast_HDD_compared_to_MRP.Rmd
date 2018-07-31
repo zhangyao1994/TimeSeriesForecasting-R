@@ -342,13 +342,18 @@ myforecast <- function(temp_data){
   forecastPeriodLen <- 24 + WeekAhead
   
   AvailableWeek <- nrow(test)
-  Truth <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'HDD_QTY',test$y,rep(NA,forecastPeriodLen-AvailableWeek))
-  Naive <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive',tail(train$y,forecastPeriodLen),rep(NA,max(forecastPeriodLen-nrow(train),0)))
+  Truth <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'Actual',test$y,rep(NA,forecastPeriodLen-AvailableWeek))
   
   if (nrow(test)<=1 | nrow(train)<=nrow(test) | nrow(train)<=2){
-    return(rbind(Truth,Naive))
+    return(Truth)
   }
   
+  Naive1 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive1',tail(train$y,forecastPeriodLen),rep(NA,max(forecastPeriodLen-nrow(train),0)))
+  if ((nrow(train)>=(13+forecastPeriodLen))){
+    Naive2 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive2',train$y[(nrow(train)-13-forecastPeriodLen):(nrow(train)-13)])
+  } else{
+    Naive2 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive2',rep(NA,forecastPeriodLen))
+  }
   # Add time series signature
   train_augmented <- train[nrow(train),] %>%
     tk_augment_timeseries_signature()
@@ -453,7 +458,7 @@ myforecast <- function(temp_data){
     nn_fcast <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'nn',forecastnnetar)
   }
   
-  return(rbind(Truth,Naive,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,nn_fcast)) # stlar_fcast does not work for the first CFG!
+  return(rbind(Truth,Naive1,Naive2,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,nn_fcast)) # stlar_fcast does not work for the first CFG!
 }
 ```
 
@@ -497,13 +502,8 @@ Fcast_MRP <- read.csv('~/Yao_Excels/HDD_FY19_MRP.csv')
 # remove '_CFG' for MRP
 Fcast_MRP$CFG = as.factor(substr(Fcast_MRP$CFG,1,nchar(as.character(Fcast_MRP$CFG))-4))
 
-# All mine
+# All mine with HDD data from IRIS
 Fcast_Yao <- read_feather('~/Yao_Rdata/All_fcast_FY19W06.feather')
-
-# HDD data from IRIS
-hdd_qty <- read_feather("~/Yao_Rdata/HDD_QTY_IRIS.feather")
-hdd_qty$CFG <- as.factor(hdd_qty$CFG)
-hdd_qty$Region <- as.factor(hdd_qty$RGN_DESC)
 
 # Check the existing regions and make them match each other
 # unique(hdd_qty$RGN_DESC)
@@ -515,18 +515,6 @@ Fcast_MRP <- rbind(Fcast_MRP.Americas,filter(Fcast_MRP,Region=='APJ'|Region=='EM
 ```
 
 ```{r Match CFG names, eval=FALSE, include=FALSE}
-# This chunk was run once, and then done.
-# Weekly data from IRIS data
-hdd_qty %>% group_by(CFG, Region, Fiscal_Wk) %>%
-  summarise(HDD_QTY = sum(PART_QTY)) %>%
-  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Rgn
-hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
-  summarise(HDD_QTY = sum(PART_QTY)) %>%
-  gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Global
-HDD_Weekly_Global$Region <- 'Global'
-HDD_Weekly <- rbind(HDD_Weekly_Global,HDD_Weekly_Rgn)
-rm(HDD_Weekly_Global,HDD_Weekly_Rgn)
-
 # Weekly data from MRP
 Fcast_MRP %>% group_by(CFG, Region, Fiscal_Wk) %>%
   summarise(MRP_Fcast = sum(value)) %>%
@@ -536,11 +524,11 @@ Fcast_MRP %>% group_by(CFG, Fiscal_Wk) %>%
   gather(Model,HDD_QTY,MRP_Fcast)-> HDD_Weekly_MRP_Global
 HDD_Weekly_MRP_Global$Region <- 'Global'
 HDD_Weekly_MRP <- rbind(HDD_Weekly_MRP_Global,HDD_Weekly_MRP_Rgn)
+HDD_Weekly_MRP$MRPVersion <- 'FY19W06'
 rm(HDD_Weekly_MRP_Global,HDD_Weekly_MRP_Rgn)
 
 # join
-HDD_Weekly %>% full_join(HDD_Weekly_MRP) %>% 
-  full_join(Fcast_Yao) -> CFG_fcast.joined
+Fcast_Yao %>% full_join(HDD_Weekly_MRP) -> CFG_fcast.joined
 rm(HDD_Weekly,HDD_Weekly_MRP,hdd_qty,Fcast_MRP,Fcast_Yao)
 
 write_feather(CFG_fcast.joined, "~/Yao_Rdata/CFG_fcast_joined_FY19W06.feather")
@@ -556,6 +544,18 @@ CFG_RGN_QTR_data.grouped$w <- CFG_RGN_QTR_data.grouped$Avg_Qtr_HDD_QTY/Total_Avg
 ```
 
 ```{r Visualize HDD_QTY and Forecast MRP}
+# To visualize more historical data
+# # Weekly data from IRIS data
+# hdd_qty %>% group_by(CFG, Region, Fiscal_Wk) %>%
+#   summarise(HDD_QTY = sum(PART_QTY)) %>%
+#   gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Rgn
+# hdd_qty %>% group_by(CFG, Fiscal_Wk) %>%
+#   summarise(HDD_QTY = sum(PART_QTY)) %>%
+#   gather(Model,HDD_QTY,HDD_QTY)-> HDD_Weekly_Global
+# HDD_Weekly_Global$Region <- 'Global'
+# HDD_Weekly <- rbind(HDD_Weekly_Global,HDD_Weekly_Rgn)
+# rm(HDD_Weekly_Global,HDD_Weekly_Rgn)
+
 # Get all CFG names, all Region names, and all Model names
 CFGgroups <- levels(factor(CFG_fcast.joined$CFG))
 len_CFG <- length(CFGgroups)
@@ -576,7 +576,7 @@ if (0){
       
       if (nrow(temp_data)>0) {
         
-        p_week<- temp_data %>%
+        p_week <- temp_data %>%
           ggplot(aes(x=Fiscal_Wk,y=HDD_QTY,group = Model, color = Model)) +
           geom_point(size = 2) +
           geom_line(size = 1.5,alpha=0.6) +
@@ -657,7 +657,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
   for (i_Region in 1:len_Region){
     temp_data <- filter(CFG_fcast,CFG==CFGgroups2[i_CFG],Region==Region.groups[i_Region])
     print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
-    totalHDD <- sum(temp_data$HDD_QTY)
+    totalHDD <- sum(temp_data$HDD_QTY, na.rm = TRUE)
     w <- temp_data$HDD_QTY/totalHDD
     
     # MRP
@@ -987,7 +987,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     Ensemble <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'Ensemble',mape_wk_Ensemble,WAPE_Ensemble,APE_fcastPeriod_Ensemble,Aggregated_weighted_APE_Ensemble,MASE_wk_Ensemble,AASE_fcastPeriod_Ensemble,RMSE_wk_Ensemble,AAE_fcastPeriod_per_week_Ensemble,MAE_wk_Ensemble)
     
-    OneRow <- rbind(Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,wn,naive,Ensemble)
+    OneRow <- rbind(MRP,Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,wn,naive,Ensemble)
     OneCFG <- rbind(OneCFG,OneRow)
   }
   return(OneCFG)
@@ -1002,8 +1002,9 @@ results[c("CFG","Region",'Model' )] <- lapply(results[c("CFG","Region",'Model' )
 
 results %>% left_join(CFG_RGN_QTR_data.grouped, by = c("CFG","Region"="RGN_DESC")) -> results.weight
 
-path <- "~/Yao_Rdata/EvaluationResults.feather"
+path <- "~/Yao_Rdata/EvaluationResults_FY19W06.feather"
 write_feather(results, path)
+write_excel_csv(results.weight,"~/Yao_Rdata/EvaluationResults_FY19W06.csv")
 ```
 
 ```{r close the clusters}
