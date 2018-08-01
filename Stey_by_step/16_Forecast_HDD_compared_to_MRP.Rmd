@@ -5,7 +5,7 @@ date: "Jul 30, 2018"
 output: html_document
 ---
 
-Updated on 07/30/2018.
+Updated on 08/01/2018.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -30,6 +30,7 @@ db = dbConnect(odbc::odbc(),
 ```
 
 Download the latest HDD sales data from SQL server.
+
 
 ```{sql hdd_qty, connection=db, output.var = 'hdd_qty'}
 SELECT 
@@ -58,6 +59,51 @@ GROUP BY
 ORDER BY D.Cfg_Desc, C.Fiscal_Qtr, C.Fiscal_Mo, C.Fiscal_Wk
 ```
 
+
+```{sql hdd_qty, connection=db, output.var = 'hdd_qty_updated0731'}
+SELECT 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date, C.Cfg_Desc AS CFG,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END AS LOB_DESC, BRAND_CATG_DESC,
+SUM(ITM_QTY) AS ITM_QTY
+FROM [IRIS].[Base].[ISG_Business_Transformation.isgordersdetails] AS A
+LEFT JOIN IRIS_Data_Mart.dbo.SKU_CFG_Bridge AS C
+ON A.ITM_NBR = C.sku_num
+JOIN IRIS.DIM.date_hyperion_v AS D
+ON A.ORD_DT = D.Fiscal_Date
+WHERE Commodity_Desc = 'Hard Drive'
+AND DELL_EMC_ORDER_FLAG = 'DELL' AND TYPE_DESC = 'Enterprise Solution Group PBU' AND Fiscal_Yr >= 'FY17'
+GROUP BY 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date,
+C.Cfg_Desc,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END, BRAND_CATG_DESC
+```
+
+```{r Compre two versions of hdd_qty using two queries}
+week_data <- hdd_qty %>% group_by(Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+week_data$version <- 'Yao Current'
+
+week_data.2 <- hdd_qty_updated0731 %>% group_by(Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_QTY=sum(ITM_QTY))
+week_data.2$version <- 'Cinkie Updated'
+
+week_data %>% full_join(week_data.2) -> week_data.compare
+
+p_week <- week_data.compare %>%
+  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=version,color=version)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'Overall HDD Weekly Sales', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01','FY20W01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
+p_week
+
+```
+
+The difference seems acceptable and not huge.
 
 ```{r Deal with missing data}
 Weekly_HDD_QTY_combined <- hdd_qty %>% group_by(Order_Date_week,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(PART_QTY))
@@ -349,8 +395,8 @@ myforecast <- function(temp_data){
   }
   
   Naive1 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive1',tail(train$y,forecastPeriodLen),rep(NA,max(forecastPeriodLen-nrow(train),0)))
-  if ((nrow(train)>=(13+forecastPeriodLen))){
-    Naive2 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive2',train$y[(nrow(train)-13-forecastPeriodLen):(nrow(train)-13)])
+  if ((nrow(train)>(13+forecastPeriodLen))){
+    Naive2 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive2',train$y[(nrow(train)-13-forecastPeriodLen+1):(nrow(train)-13)])
   } else{
     Naive2 <- c(CFGgroups[i_CFG],Regions[i_Region],MRP_Version,'naive2',rep(NA,forecastPeriodLen))
   }
@@ -598,46 +644,48 @@ if (0){
 # Data transformation for error calculations
 CFG_fcast.joined[!is.na(CFG_fcast.joined$Model),] %>% spread(Model,HDD_QTY) %>% ungroup() -> CFG_fcast
 
-CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,naive,Xgboost), na.rm = TRUE)
+CFG_fcast$Ensemble <- rowMeans(select(CFG_fcast,ARIMA,Xgboost), na.rm = TRUE)
 
 CFG_fcast %>% gather(Model,HDD_QTY,ARIMA:Ensemble) -> CFG_fcast.joined.2
 write_feather(CFG_fcast.joined.2, "~/Yao_Rdata/CFG_fcast_joined.feather")
 
 #CFG_cast <- read_feather("~/Yao_Rdata/CFG_fcast.feather")
-LastWk <- tail(unique(hdd_qty$Fiscal_Wk), n=1)
+LastWk <- tail(unique(HDD_Weekly_Global$Fiscal_Wk), n=1)
 
 # CFG_fcast.na.omitted <- na.omit(CFG_fcast) %>% # Excluded some CFGs that do not have all model results. I do not want this.
 CFG_fcast <- filter(CFG_fcast,Fiscal_Wk>="FY19W07" & Fiscal_Wk<=LastWk) %>%
   # calculate abs(error) here
-  mutate(err_MRP = abs(HDD_QTY - MRP_Fcast),
-         err_Prophet = abs(HDD_QTY - Prophet),
-         err_ARIMA = abs(HDD_QTY - ARIMA),
-         err_TBATS = abs(HDD_QTY - TBATS),
-         err_lm = abs(HDD_QTY - lm),
-         err_RF = abs(HDD_QTY - RF),
-         err_Xgboost = abs(HDD_QTY - Xgboost),
-         err_ets = abs(HDD_QTY - ets),
-         err_nn = abs(HDD_QTY - nn),
-         err_rw = abs(HDD_QTY - rw),
-         err_rwd = abs(HDD_QTY - rwd),
-         err_wn = abs(HDD_QTY - wn),
-         err_naive = abs(HDD_QTY - naive),
-         err_Ensemble = abs(HDD_QTY - Ensemble),
+  mutate(err_MRP = abs(Actual - MRP_Fcast),
+         err_Prophet = abs(Actual - Prophet),
+         err_ARIMA = abs(Actual - ARIMA),
+         err_TBATS = abs(Actual - TBATS),
+         err_lm = abs(Actual - lm),
+         err_RF = abs(Actual - RF),
+         err_Xgboost = abs(Actual - Xgboost),
+         err_ets = abs(Actual - ets),
+         err_nn = abs(Actual - nn),
+         err_rw = abs(Actual - rw),
+         err_rwd = abs(Actual - rwd),
+         err_wn = abs(Actual - wn),
+         err_naive1 = abs(Actual - naive1),
+         err_naive2 = abs(Actual - naive2),
+         err_Ensemble = abs(Actual - Ensemble),
          # calculate absolute percent error
-         ape_MRP = abs((HDD_QTY - MRP_Fcast)/HDD_QTY * 100),
-         ape_Prophet = abs((HDD_QTY - Prophet)/HDD_QTY * 100),
-         ape_ARIMA = abs((HDD_QTY - ARIMA)/HDD_QTY * 100),
-         ape_TBATS = abs((HDD_QTY - TBATS)/HDD_QTY * 100),
-         ape_lm = abs((HDD_QTY - lm)/HDD_QTY * 100),
-         ape_RF = abs((HDD_QTY - RF)/HDD_QTY * 100),
-         ape_Xgboost = abs((HDD_QTY - Xgboost)/HDD_QTY * 100),
-         ape_ets = abs((HDD_QTY - ets)/HDD_QTY * 100),
-         ape_nn = abs((HDD_QTY - nn)/HDD_QTY * 100),
-         ape_rw = abs((HDD_QTY - rw)/HDD_QTY * 100),
-         ape_rwd = abs((HDD_QTY - rwd)/HDD_QTY * 100),
-         ape_wn = abs((HDD_QTY - wn)/HDD_QTY * 100),
-         ape_naive = abs((HDD_QTY - naive)/HDD_QTY * 100),
-         ape_Ensemble = abs((HDD_QTY - Ensemble)/HDD_QTY * 100))
+         ape_MRP = abs((Actual - MRP_Fcast)/Actual * 100),
+         ape_Prophet = abs((Actual - Prophet)/Actual * 100),
+         ape_ARIMA = abs((Actual - ARIMA)/Actual * 100),
+         ape_TBATS = abs((Actual - TBATS)/Actual * 100),
+         ape_lm = abs((Actual - lm)/Actual * 100),
+         ape_RF = abs((Actual - RF)/Actual * 100),
+         ape_Xgboost = abs((Actual - Xgboost)/Actual * 100),
+         ape_ets = abs((Actual - ets)/Actual * 100),
+         ape_nn = abs((Actual - nn)/Actual * 100),
+         ape_rw = abs((Actual - rw)/Actual * 100),
+         ape_rwd = abs((Actual - rwd)/Actual * 100),
+         ape_wn = abs((Actual - wn)/Actual * 100),
+         ape_naive1 = abs((Actual - naive1)/Actual * 100),
+         ape_naive2 = abs((Actual - naive2)/Actual * 100),
+         ape_Ensemble = abs((Actual - Ensemble)/Actual * 100))
 
 # Function that returns Root Mean Squared Error
 RMSE <- function(error){
@@ -657,19 +705,19 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
   for (i_Region in 1:len_Region){
     temp_data <- filter(CFG_fcast,CFG==CFGgroups2[i_CFG],Region==Region.groups[i_Region])
     print(paste(CFGgroups2[i_CFG],Region.groups[i_Region],'PASSED!'))
-    totalHDD <- sum(temp_data$HDD_QTY, na.rm = TRUE)
-    w <- temp_data$HDD_QTY/totalHDD
+    totalHDD <- sum(temp_data$Actual, na.rm = TRUE)
+    w <- temp_data$Actual/totalHDD
     
     # MRP
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_MRP <- weighted.mean(temp_data$ape_MRP,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_MRP <- weighted.mean(temp_data$ape_MRP,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_MRP <- sum(temp_data$err_MRP, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_MRP <- abs(sum(temp_data$MRP_Fcast, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_MRP <- sum(w*temp_data$err_MRP, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_MRP <- sum(w*temp_data$err_MRP, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
     MASE_wk_MRP <- mean(abs(temp_data$err_MRP/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
@@ -685,18 +733,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # Prophet
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_Prophet <- weighted.mean(temp_data$ape_Prophet,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_Prophet <- weighted.mean(temp_data$ape_Prophet,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_Prophet <- sum(temp_data$err_Prophet, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? No, this cancelled out some errors, which is not good.
     APE_fcastPeriod_Prophet <- abs(sum(temp_data$Prophet, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_Prophet <- sum(w*temp_data$err_Prophet, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_Prophet <- sum(w*temp_data$err_Prophet, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_Prophet <- mean(abs(temp_data$err_Prophet/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_Prophet <- mean(abs(temp_data$err_Prophet/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_Prophet <- abs(sum(temp_data$err_Prophet, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_Prophet <- abs(sum(temp_data$err_Prophet, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_Prophet <- RMSE(temp_data$err_Prophet)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -712,18 +760,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     } else{
       # Weekly Error Calculation
       # Metric 1: Weighted MAPE by Week / WAPE
-      mape_wk_ARIMA <- weighted.mean(temp_data$ape_ARIMA,temp_data$HDD_QTY, na.rm = TRUE)
+      mape_wk_ARIMA <- weighted.mean(temp_data$ape_ARIMA,temp_data$Actual, na.rm = TRUE)
       # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
       WAPE_ARIMA <- sum(temp_data$err_ARIMA, na.rm = TRUE)/totalHDD*100
       # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
       APE_fcastPeriod_ARIMA <- abs(sum(temp_data$ARIMA, na.rm = TRUE)-totalHDD)/totalHDD * 100
       
       # Metric 2: Aggregated Weighted APE
-      Aggregated_weighted_APE_ARIMA <- sum(w*temp_data$err_ARIMA, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+      Aggregated_weighted_APE_ARIMA <- sum(w*temp_data$err_ARIMA, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
       # Metric 3: MASE: Mean Absolute Scaled Error
-      MASE_wk_ARIMA <- mean(abs(temp_data$err_ARIMA/temp_data$err_naive), na.rm = TRUE)
+      MASE_wk_ARIMA <- mean(abs(temp_data$err_ARIMA/temp_data$err_MRP), na.rm = TRUE)
       # Metric 4 Aggregated Absolute Scaled Error
-      AASE_fcastPeriod_ARIMA <- abs(sum(temp_data$err_ARIMA, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+      AASE_fcastPeriod_ARIMA <- abs(sum(temp_data$err_ARIMA, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
       # Metric 5: Mean RMSE by Week
       RMSE_wk_ARIMA <- RMSE(temp_data$err_ARIMA)
       # Metric 6: Aggregatred RMSE/MAE per week
@@ -736,18 +784,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # TBATS
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_TBATS <- weighted.mean(temp_data$ape_TBATS,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_TBATS <- weighted.mean(temp_data$ape_TBATS,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_TBATS <- sum(temp_data$err_TBATS, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_TBATS <- abs(sum(temp_data$TBATS, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_TBATS <- sum(w*temp_data$err_TBATS, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_TBATS <- sum(w*temp_data$err_TBATS, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_TBATS <- mean(abs(temp_data$err_TBATS/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_TBATS <- mean(abs(temp_data$err_TBATS/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_TBATS <- abs(sum(temp_data$err_TBATS, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_TBATS <- abs(sum(temp_data$err_TBATS, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_TBATS <- RMSE(temp_data$err_TBATS)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -759,18 +807,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     #  lm
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_lm <- weighted.mean(temp_data$ape_lm,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_lm <- weighted.mean(temp_data$ape_lm,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_lm <- sum(temp_data$err_lm, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_lm <- abs(sum(temp_data$lm, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_lm <- sum(w*temp_data$err_lm, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_lm <- sum(w*temp_data$err_lm, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_lm <- mean(abs(temp_data$err_lm/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_lm <- mean(abs(temp_data$err_lm/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_lm <- abs(sum(temp_data$err_lm, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_lm <- abs(sum(temp_data$err_lm, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_lm <- RMSE(temp_data$err_lm)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -782,18 +830,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     #  RF
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_RF <- weighted.mean(temp_data$ape_RF,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_RF <- weighted.mean(temp_data$ape_RF,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_RF <- sum(temp_data$err_RF, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_RF <- abs(sum(temp_data$RF, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_RF <- sum(w*temp_data$err_RF, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_RF <- sum(w*temp_data$err_RF, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_RF <- mean(abs(temp_data$err_RF/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_RF <- mean(abs(temp_data$err_RF/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_RF <- abs(sum(temp_data$err_RF, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_RF <- abs(sum(temp_data$err_RF, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_RF <- RMSE(temp_data$err_RF)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -805,18 +853,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # Xgboost
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_Xgboost <- weighted.mean(temp_data$ape_Xgboost,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_Xgboost <- weighted.mean(temp_data$ape_Xgboost,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_Xgboost <- sum(temp_data$err_Xgboost, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_Xgboost <- abs(sum(temp_data$Xgboost, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_Xgboost <- sum(w*temp_data$err_Xgboost, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_Xgboost <- sum(w*temp_data$err_Xgboost, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_Xgboost <- mean(abs(temp_data$err_Xgboost/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_Xgboost <- mean(abs(temp_data$err_Xgboost/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_Xgboost <- abs(sum(temp_data$err_Xgboost, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_Xgboost <- abs(sum(temp_data$err_Xgboost, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_Xgboost <- RMSE(temp_data$err_Xgboost)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -828,18 +876,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # ets
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_ets <- weighted.mean(temp_data$ape_ets,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_ets <- weighted.mean(temp_data$ape_ets,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_ets <- sum(temp_data$err_ets, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_ets <- abs(sum(temp_data$ets, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_ets <- sum(w*temp_data$err_ets, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_ets <- sum(w*temp_data$err_ets, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_ets <- mean(abs(temp_data$err_ets/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_ets <- mean(abs(temp_data$err_ets/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_ets <- abs(sum(temp_data$err_ets, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_ets <- abs(sum(temp_data$err_ets, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_ets <- RMSE(temp_data$err_ets)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -851,18 +899,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # nn
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_nn <- weighted.mean(temp_data$ape_nn,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_nn <- weighted.mean(temp_data$ape_nn,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_nn <- sum(temp_data$err_nn, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_nn <- abs(sum(temp_data$nn, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_nn <- sum(w*temp_data$err_nn, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_nn <- sum(w*temp_data$err_nn, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_nn <- mean(abs(temp_data$err_nn/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_nn <- mean(abs(temp_data$err_nn/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_nn <- abs(sum(temp_data$err_nn, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_nn <- abs(sum(temp_data$err_nn, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_nn <- RMSE(temp_data$err_nn)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -874,18 +922,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # rw
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_rw <- weighted.mean(temp_data$ape_rw,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_rw <- weighted.mean(temp_data$ape_rw,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_rw <- sum(temp_data$err_rw, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_rw <- abs(sum(temp_data$rw, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_rw <- sum(w*temp_data$err_rw, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_rw <- sum(w*temp_data$err_rw, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_rw <- mean(abs(temp_data$err_rw/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_rw <- mean(abs(temp_data$err_rw/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_rw <- abs(sum(temp_data$err_rw, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_rw <- abs(sum(temp_data$err_rw, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_rw <- RMSE(temp_data$err_rw)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -897,18 +945,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # rwd
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_rwd <- weighted.mean(temp_data$ape_rwd,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_rwd <- weighted.mean(temp_data$ape_rwd,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_rwd <- sum(temp_data$err_rwd, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_rwd <- abs(sum(temp_data$rwd, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_rwd <- sum(w*temp_data$err_rwd, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_rwd <- sum(w*temp_data$err_rwd, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_rwd <- mean(abs(temp_data$err_rwd/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_rwd <- mean(abs(temp_data$err_rwd/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_rwd <- abs(sum(temp_data$err_rwd, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_rwd <- abs(sum(temp_data$err_rwd, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_rwd <- RMSE(temp_data$err_rwd)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -920,18 +968,18 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     # wn
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_wn <- weighted.mean(temp_data$ape_wn,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_wn <- weighted.mean(temp_data$ape_wn,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_wn <- sum(temp_data$err_wn, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_wn <- abs(sum(temp_data$wn, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_wn <- sum(w*temp_data$err_wn, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_wn <- sum(w*temp_data$err_wn, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_wn <- mean(abs(temp_data$err_wn/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_wn <- mean(abs(temp_data$err_wn/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_wn <- abs(sum(temp_data$err_wn, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_wn <- abs(sum(temp_data$err_wn, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_wn <- RMSE(temp_data$err_wn)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -941,43 +989,66 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     wn <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'wn',mape_wk_wn,WAPE_wn,APE_fcastPeriod_wn,Aggregated_weighted_APE_wn,MASE_wk_wn,AASE_fcastPeriod_wn,RMSE_wk_wn,AAE_fcastPeriod_per_week_wn,MAE_wk_wn)
     
-    # naive
+    # naive1
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_naive <- weighted.mean(temp_data$ape_naive,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_naive1 <- weighted.mean(temp_data$ape_naive1,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
-    WAPE_naive <- sum(temp_data$err_naive, na.rm = TRUE)/totalHDD*100
+    WAPE_naive1 <- sum(temp_data$err_naive1, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
-    APE_fcastPeriod_naive <- abs(sum(temp_data$naive, na.rm = TRUE)-totalHDD)/totalHDD * 100
+    APE_fcastPeriod_naive1 <- abs(sum(temp_data$naive1, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_naive <- sum(w*temp_data$err_naive, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_naive1 <- sum(w*temp_data$err_naive1, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_naive <- mean(abs(temp_data$err_naive/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_naive1 <- mean(abs(temp_data$err_naive1/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_naive <- abs(sum(temp_data$err_naive, na.rm = TRUE)/sum(temp_data$err_naive, na.rm = TRUE))
+    AASE_fcastPeriod_naive1 <- abs(sum(temp_data$err_naive1, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
-    RMSE_wk_naive <- RMSE(temp_data$err_naive)
+    RMSE_wk_naive1 <- RMSE(temp_data$err_naive1)
     # Metric 6: Aggregatred RMSE/MAE per week
-    AAE_fcastPeriod_per_week_naive <- abs(sum(temp_data$naive, na.rm = TRUE)-totalHDD)/nrow(temp_data)
+    AAE_fcastPeriod_per_week_naive1 <- abs(sum(temp_data$naive1, na.rm = TRUE)-totalHDD)/nrow(temp_data)
     # Metric 6.2: MAE # The same as 6
-    MAE_wk_naive <- mean(temp_data$err_naive, na.rm = TRUE)
+    MAE_wk_naive1 <- mean(temp_data$err_naive1, na.rm = TRUE)
     
-    naive <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'naive',mape_wk_naive,WAPE_naive,APE_fcastPeriod_naive,Aggregated_weighted_APE_naive,MASE_wk_naive,AASE_fcastPeriod_naive,RMSE_wk_naive,AAE_fcastPeriod_per_week_naive,MAE_wk_naive)
+    naive1 <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'naive1',mape_wk_naive1,WAPE_naive1,APE_fcastPeriod_naive1,Aggregated_weighted_APE_naive1,MASE_wk_naive1,AASE_fcastPeriod_naive1,RMSE_wk_naive1,AAE_fcastPeriod_per_week_naive1,MAE_wk_naive1)
+    
+    # naive2
+    # Metric 1: Weighted MAPE by Week / WAPE
+    mape_wk_naive2 <- weighted.mean(temp_data$ape_naive2,temp_data$Actual, na.rm = TRUE)
+    # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
+    WAPE_naive2 <- sum(temp_data$err_naive2, na.rm = TRUE)/totalHDD*100
+    # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
+    APE_fcastPeriod_naive2 <- abs(sum(temp_data$naive2, na.rm = TRUE)-totalHDD)/totalHDD * 100
+    
+    # Metric 2: Aggregated Weighted APE
+    Aggregated_weighted_APE_naive2 <- sum(w*temp_data$err_naive2, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
+    # Metric 3: MASE: Mean Absolute Scaled Error
+    MASE_wk_naive2 <- mean(abs(temp_data$err_naive2/temp_data$err_MRP), na.rm = TRUE)
+    # Metric 4 Aggregated Absolute Scaled Error
+    AASE_fcastPeriod_naive2 <- abs(sum(temp_data$err_naive2, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
+    # Metric 5: Mean RMSE by Week
+    RMSE_wk_naive2 <- RMSE(temp_data$err_naive2)
+    # Metric 6: Aggregatred RMSE/MAE per week
+    AAE_fcastPeriod_per_week_naive2 <- abs(sum(temp_data$naive2, na.rm = TRUE)-totalHDD)/nrow(temp_data)
+    # Metric 6.2: MAE # The same as 6
+    MAE_wk_naive2 <- mean(temp_data$err_naive2, na.rm = TRUE)
+    
+    naive2 <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'naive2',mape_wk_naive2,WAPE_naive2,APE_fcastPeriod_naive2,Aggregated_weighted_APE_naive2,MASE_wk_naive2,AASE_fcastPeriod_naive2,RMSE_wk_naive2,AAE_fcastPeriod_per_week_naive2,MAE_wk_naive2)
     
     # Ensemble
     # Metric 1: Weighted MAPE by Week / WAPE
-    mape_wk_Ensemble <- weighted.mean(temp_data$ape_Ensemble,temp_data$HDD_QTY, na.rm = TRUE)
+    mape_wk_Ensemble <- weighted.mean(temp_data$ape_Ensemble,temp_data$Actual, na.rm = TRUE)
     # Metric 1.2: WAPE # Is this the same as my Weighted MAPE by Week? Yep!
     WAPE_Ensemble <- sum(temp_data$err_Ensemble, na.rm = TRUE)/totalHDD*100
     # Metric 1.3: Aggregated APE during the forecast period # The same as 1 and 1.2? Yes!
     APE_fcastPeriod_Ensemble <- abs(sum(temp_data$Ensemble, na.rm = TRUE)-totalHDD)/totalHDD * 100
     
     # Metric 2: Aggregated Weighted APE
-    Aggregated_weighted_APE_Ensemble <- sum(w*temp_data$err_Ensemble, na.rm = TRUE)/sum(w*temp_data$HDD_QTY, na.rm = TRUE)*100
+    Aggregated_weighted_APE_Ensemble <- sum(w*temp_data$err_Ensemble, na.rm = TRUE)/sum(w*temp_data$Actual, na.rm = TRUE)*100
     # Metric 3: MASE: Mean Absolute Scaled Error
-    MASE_wk_Ensemble <- mean(abs(temp_data$err_Ensemble/temp_data$err_naive), na.rm = TRUE)
+    MASE_wk_Ensemble <- mean(abs(temp_data$err_Ensemble/temp_data$err_MRP), na.rm = TRUE)
     # Metric 4 Aggregated Absolute Scaled Error
-    AASE_fcastPeriod_Ensemble <- abs(sum(temp_data$err_Ensemble, na.rm = TRUE)/sum(temp_data$err_Ensemble, na.rm = TRUE))
+    AASE_fcastPeriod_Ensemble <- abs(sum(temp_data$err_Ensemble, na.rm = TRUE)/sum(temp_data$err_MRP, na.rm = TRUE))
     # Metric 5: Mean RMSE by Week
     RMSE_wk_Ensemble <- RMSE(temp_data$err_Ensemble)
     # Metric 6: Aggregatred RMSE/MAE per week
@@ -987,7 +1058,7 @@ results <- foreach(i_CFG=1:len_CFG, .combine=rbind, .packages=c('tidyverse')) %d
     
     Ensemble <- c(CFGgroups2[i_CFG],Region.groups[i_Region],'Ensemble',mape_wk_Ensemble,WAPE_Ensemble,APE_fcastPeriod_Ensemble,Aggregated_weighted_APE_Ensemble,MASE_wk_Ensemble,AASE_fcastPeriod_Ensemble,RMSE_wk_Ensemble,AAE_fcastPeriod_per_week_Ensemble,MAE_wk_Ensemble)
     
-    OneRow <- rbind(MRP,Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,wn,naive,Ensemble)
+    OneRow <- rbind(MRP,Prophet,ARIMA,TBATS,lm,RF,Xgboost,ets,nn,rw,rwd,wn,naive1,naive2,Ensemble)
     OneCFG <- rbind(OneCFG,OneRow)
   }
   return(OneCFG)
