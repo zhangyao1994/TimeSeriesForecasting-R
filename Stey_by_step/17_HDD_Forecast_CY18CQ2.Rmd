@@ -1,0 +1,137 @@
+---
+title: "HDD Forecast CY18CQ2"
+author: "Yao"
+date: "August 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Got Lock Guidance CY18CQ2 Results from Cinkie.
+
+```{r Read the Loack Guidance CY18CQ2 Results}
+library(readr)
+Lock_Guidance_CY18CQ2_Results <- read_csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results.csv")
+```
+
+```{r Analyze the Accuracy}
+Lock_Guidance_CY18CQ2_Results %>% 
+  filter(ITM_TYPE=="HDD") %>%
+  select(Actual,APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
+GGally::ggpairs() -> p
+```
+
+Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
+
+Let me downlaod the data from IRIS and use them to forecast HDD demand for calendar quarter.
+
+## Load Database from SQL Server
+
+```{r ConnectDB}
+library(DBI)
+db = dbConnect(odbc::odbc(),
+               driver = 'SQL Server',
+               server = 'IRISAGL01.aus.amer.dell.com',
+               user = 'Yao_Z',
+               password = 'y67uhgt$Y')
+```
+
+Download the latest HDD sales data from SQL server.
+
+The following query was from Cinkie.
+```{sql hdd_qty, connection=db, output.var = 'hdd_qty_updated0731'}
+SELECT 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date, C.Cfg_Desc AS CFG,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END AS LOB_DESC, BRAND_CATG_DESC,
+SUM(ITM_QTY) AS ITM_QTY
+FROM [IRIS].[Base].[ISG_Business_Transformation.isgordersdetails] AS A
+LEFT JOIN IRIS_Data_Mart.dbo.SKU_CFG_Bridge AS C
+ON A.ITM_NBR = C.sku_num
+JOIN IRIS.DIM.date_hyperion_v AS D
+ON A.ORD_DT = D.Fiscal_Date
+WHERE Commodity_Desc = 'Hard Drive'
+AND DELL_EMC_ORDER_FLAG = 'DELL' AND TYPE_DESC = 'Enterprise Solution Group PBU' AND Fiscal_Yr >= 'FY17'
+GROUP BY 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date,
+C.Cfg_Desc,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END, BRAND_CATG_DESC
+```
+
+```{r Check the CFGs}
+unique(hdd_qty_updated0731$CFG) %>% length()
+```
+
+I would like to add [AND C.Cfg_Desc LIKE '%HDD%'].
+
+```{sql hdd_qty, connection=db, output.var = 'hdd_qty_updated0731_HDD'}
+SELECT 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date, C.Cfg_Desc AS CFG,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END AS LOB_DESC, BRAND_CATG_DESC,
+SUM(ITM_QTY) AS ITM_QTY
+FROM [IRIS].[Base].[ISG_Business_Transformation.isgordersdetails] AS A
+LEFT JOIN IRIS_Data_Mart.dbo.SKU_CFG_Bridge AS C
+ON A.ITM_NBR = C.sku_num
+JOIN IRIS.DIM.date_hyperion_v AS D
+ON A.ORD_DT = D.Fiscal_Date
+WHERE Commodity_Desc = 'Hard Drive' AND C.Cfg_Desc LIKE '%HDD%'
+AND DELL_EMC_ORDER_FLAG = 'DELL' AND TYPE_DESC = 'Enterprise Solution Group PBU' AND Fiscal_Yr >= 'FY17'
+GROUP BY 
+D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date,
+C.Cfg_Desc,
+CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END, BRAND_CATG_DESC
+```
+
+```{r Check the CFGs}
+unique(hdd_qty_updated0731_HDD$CFG) %>% length()
+```
+
+```{r Compre two versions of hdd_qty using two queries}
+hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS.feather') # They query I used till 07/31/2018
+week_data <- hdd_qty %>% group_by(Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_QTY=sum(PART_QTY))
+week_data$version <- 'Yao Current'
+
+week_data.2 <- hdd_qty_updated0731_HDD %>% group_by(Fiscal_Wk) %>%
+  summarise(Fiscal_Wk_QTY=sum(ITM_QTY))
+week_data.2$version <- 'Cinkie Updated'
+
+week_data %>% full_join(week_data.2) -> week_data.compare
+
+p_week <- week_data.compare %>%
+  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=version,color=version)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = 'Overall HDD Weekly Sales', x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 18) + 
+  scale_color_tableau('tableau10medium') + 
+  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01','FY20W01')) +
+  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
+p_week
+
+```
+
+They are not that different! Since I need the Calendar_Qtr, use the hdd_qty_updated0731_HDD then.
+
+```{r Deal with missing data}
+Weekly_HDD_QTY_combined <- hdd_qty_updated0731_HDD %>% group_by(Fiscal_Wk,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(ITM_QTY))
+# 7/20/2018 128 weeks
+
+apply(hdd_qty_updated0731_HDD, 2, function(x) any(is.na(x)))
+
+write_feather(hdd_qty_updated0731_HDD,'~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
+```
+
+```{r Load CFG attributes}
+library(readr)
+HDD_SSD_Memory_CFG_Attributes <- read_csv("~/Yao_Excels/HDD SSD Memory CFG Attributes.csv")
+
+# HDD Weekly Sales
+week_data <- hdd_qty_updated0731_HDD %>% left_join(HDD_SSD_Memory_CFG_Attributes)
+
+write_excel_csv(week_data,'~/Yao_Excels/HDD_CFG_wk.csv')
+```
+
