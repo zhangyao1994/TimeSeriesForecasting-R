@@ -391,6 +391,9 @@ write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr.feather")
 write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr.csv")
 ```
 
+```{r Error Calculation}
+All_fcast %>% spread(Model,HDD_QTY) -> All_fcast.spread
+```
 
 
 ```{r close the clusters}
