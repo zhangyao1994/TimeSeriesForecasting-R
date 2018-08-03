@@ -392,7 +392,85 @@ write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr.csv")
 ```
 
 ```{r Error Calculation}
-All_fcast %>% spread(Model,HDD_QTY) -> All_fcast.spread
+yao_hdd = readxl::read_excel('~/Yao_Excels/All_fcast_CV_Cal_Qtr.xlsx', na = 'NA')
+
+result_q2_yao = yao_hdd %>% 
+  filter(Quarter == 'CY18CQ2') %>% 
+  group_by(CFG, Model) %>% 
+  summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+  filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
+  select(-Model) %>% 
+  rename(HDD_Actual = Yao_QTY) %>% 
+  left_join(
+    yao_hdd %>% 
+      filter(Quarter == 'CY18CQ2') %>% 
+      group_by(CFG, Model) %>% 
+      summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+      filter(!is.na(Yao_QTY) & Model != 'Actual'), by = 'CFG') %>% 
+  mutate(APE = abs(HDD_Actual - Yao_QTY) / HDD_Actual,
+         AttainmentRate = HDD_Actual/Yao_QTY) 
+
+result_q2_yao  %>%
+  group_by(Model) %>% 
+  summarise(MAPE = mean(APE))
+
+# Commodity "Accuracy"
+result_q2_yao %>%
+  select(CFG,Model,AttainmentRate) %>%
+  filter(AttainmentRate>=0.8 & AttainmentRate<=1.2) %>%
+  spread(Model,AttainmentRate) %>%
+  ungroup() %>%
+  select(-CFG) %>%
+  lapply(function(x) length(which(!is.na(x)))/length(x)) %>%
+  lapply(function(x)  as.numeric(as.character(x))) %>% data.frame() -> CommodityAccuracy
+
+# Compare to Lock Guidance
+yao_hdd %>% 
+  filter(Quarter == 'CY18CQ2') %>% 
+  group_by(CFG, Model) %>% 
+  summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+  filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
+  select(-Model) %>% 
+  rename(HDD_Actual = Yao_QTY) %>% 
+  left_join(
+    yao_hdd %>% 
+      filter(Quarter == 'CY18CQ2') %>% 
+      group_by(CFG, Model) %>% 
+      summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+      filter(!is.na(Yao_QTY) & Model != 'Actual'), by = 'CFG') %>%
+  spread(Model,Yao_QTY) -> Yao_HDD_QTY
+
+Lock_Guidance_CY18CQ2_Results %>% 
+  select(CFG,Lock_Forecast,Actual) %>%
+  left_join(Yao_HDD_QTY, by = 'CFG') %>%
+  gather(Model,HDD_QTY,-CFG,-Actual,-HDD_Actual) %>%
+  filter(!is.na(Actual) & !is.na(HDD_Actual)) %>% # only keep the common CFGs
+  mutate(APE = abs(HDD_Actual - HDD_QTY) / HDD_Actual,
+         AttainmentRate = HDD_Actual/HDD_QTY) -> result_q2
+
+result_q2  %>%
+  group_by(Model) %>% 
+  summarise(MAPE = mean(APE, na.rm = TRUE)) -> MAPE.results
+
+# Commodity "Accuracy"
+result_q2 %>%
+  select(CFG,Model,AttainmentRate) %>%
+  filter(AttainmentRate>=0.8 & AttainmentRate<=1.2) %>%
+  spread(Model,AttainmentRate) %>%
+  ungroup() %>%
+  select(-CFG) %>%
+  lapply(function(x) length(which(!is.na(x)))/length(x)) %>%
+  lapply(function(x)  as.numeric(as.character(x))) %>% data.frame() %>%
+  gather(Model,Accuracy) %>%
+  left_join(MAPE.results) -> EvalResults
+  
+write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults.csv")
+
+# Analyze the errors
+result_q2 %>% 
+  left_join(select(data.joined,CFG,CFG_GROUP,Interface,Interface_w_Speed,Capacity,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num,Avg_Qtr_HDD_QTY,HDD_Volume_Group) %>% unique() %>% arrange(CFG), by = 'CFG') -> Error.w.Attributes
+
+write_excel_csv(Error.w.Attributes,"~/Yao_Excels/Error_W_Attributes.csv")
 ```
 
 
