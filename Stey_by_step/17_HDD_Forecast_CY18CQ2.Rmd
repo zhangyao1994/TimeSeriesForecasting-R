@@ -297,7 +297,7 @@ myforecast <- function(){
     # Xgboost
     # Train the xgboost model using the "xgboost" function
     dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
-    xgModel = xgboost(data = dtrain, nrounds = ceiling(sqrt(nrow(dtrain)))) # sqrt(nrow(dtrain)), I guess
+    xgModel = xgboost(data = dtrain, nrounds = ceiling(nrow(dtrain)/3)) # sqrt(nrow(dtrain)) for classification, n/3 for regression
     # Make the predictions on the test data
     temp_test <- test_augmented[,colnames(temp)]
     preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
@@ -387,12 +387,12 @@ All_fcast$HDD_QTY <- as.numeric(as.character(All_fcast$HDD_QTY))
 
 # For plot, do not delete the NA for now.
 # saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr.feather")
-write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr.csv")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0807_v2.feather")
+write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0807_v2.csv")
 ```
 
 ```{r Error Calculation}
-yao_hdd = readxl::read_excel('~/Yao_Excels/All_fcast_CV_Cal_Qtr.xlsx', na = 'NA')
+yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0807_v2.csv', na = 'NA')
 
 result_q2_yao = yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
