@@ -129,6 +129,7 @@ write_feather(hdd_qty_updated0731_HDD,'~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
 ```{r Load CFG attributes and save the data for Power BI}
 library(readr)
 HDD_SSD_Memory_CFG_Attributes <- read_csv("~/Yao_Excels/HDD SSD Memory CFG Attributes.csv")
+hdd_qty_updated0731_HDD <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
 
 # HDD Weekly Sales
 week_data <- hdd_qty_updated0731_HDD %>% left_join(HDD_SSD_Memory_CFG_Attributes)
@@ -464,13 +465,13 @@ result_q2 %>%
   gather(Model,Accuracy) %>%
   left_join(MAPE.results) -> EvalResults
   
-write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults.csv")
+write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_v2.csv")
 
 # Analyze the errors
 result_q2 %>% 
   left_join(select(data.joined,CFG,CFG_GROUP,Interface,Interface_w_Speed,Capacity,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num,Avg_Qtr_HDD_QTY,HDD_Volume_Group) %>% unique() %>% arrange(CFG), by = 'CFG') -> Error.w.Attributes
 
-write_excel_csv(Error.w.Attributes,"~/Yao_Excels/Error_W_Attributes.csv")
+write_excel_csv(Error.w.Attributes,"~/Yao_Excels/Error_W_Attributes_v2.csv")
 ```
 
 
