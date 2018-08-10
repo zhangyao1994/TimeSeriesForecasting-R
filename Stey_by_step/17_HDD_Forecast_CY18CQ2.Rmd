@@ -208,12 +208,28 @@ registerDoParallel(no_cores)
 ## IRIS HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
+#hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
+# 8/9/2018 New Data from Cinkie
+hdd_qty <- read_csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
 
 # Weekly data For each Region
-hdd_qty %>% group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk,Calendar_Qtr) %>%
+hdd_qty %>% 
+  filter(ESI_Flag=="N") %>%
+  group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk,Calendar_Qtr) %>%
   summarise(HDD_QTY = sum(ITM_QTY)) -> HDD_Weekly
+
+HDD_Weekly %>% 
+  filter(Calendar_Qtr=='CY18CQ2') %>%
+  select(CFG,Calendar_Qtr,HDD_QTY) %>%
+  ungroup() %>%
+  group_by(CFG,Calendar_Qtr) %>%
+  summarise(Cal_Qtr_HDD = sum(HDD_QTY)) %>%
+  left_join(Lock_Guidance_CY18CQ2_Results %>% 
+                           select(CFG,Calendar_Qtr,Lock_Forecast,Actual)) %>%
+  na.omit() -> df.combined
 ```
+
+The Actual from Hyperiod is different from Cinkie's data?? Ask her later.
 
 ```{r Forecast Function}
 myforecast <- function(){
@@ -360,8 +376,9 @@ myforecast <- function(){
 
 
 ```{r Run the fuctions parallelly}
-HDD_Weekly$date <- ymd(HDD_Weekly$Fiscal_Wk_End_Date)
-CFGgroups <- levels(factor(HDD_Weekly$CFG))
+HDD_Weekly$date <- mdy(HDD_Weekly$Fiscal_Wk_End_Date)
+CFGgroups <- levels(factor(HDD_Weekly$CFG)) 
+CFGgroups <- CFGgroups[CFGgroups %in% df.combined$CFG]
 len <- length(CFGgroups)
 
 Fcast_Calendar_Qtr <- c("CY16CQ4","CY17CQ1","CY17CQ2","CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2","CY18CQ3") # This is the time point where you forecast.
@@ -388,12 +405,12 @@ All_fcast$HDD_QTY <- as.numeric(as.character(All_fcast$HDD_QTY))
 
 # For plot, do not delete the NA for now.
 # saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0807_v2.feather")
-write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0807_v2.csv")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0810.feather")
+write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0810.csv")
 ```
 
 ```{r Error Calculation}
-yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0807_v2.csv', na = 'NA')
+yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0810.csv', na = 'NA')
 
 result_q2_yao = yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
@@ -465,7 +482,7 @@ result_q2 %>%
   gather(Model,Accuracy) %>%
   left_join(MAPE.results) -> EvalResults
   
-write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_v2.csv")
+write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0810.csv")
 
 # Analyze the errors
 result_q2 %>% 
