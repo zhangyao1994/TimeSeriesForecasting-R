@@ -15,157 +15,25 @@ Got Lock Guidance CY18CQ2 Results from Cinkie.
 
 ```{r Read the Loack Guidance CY18CQ2 Results}
 library(readr)
-Lock_Guidance_CY18CQ2_Results <- read_csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results.csv")
+# Lock Guidance from Cinkie on 8/13/2018
+Lock_Guidance_CY18CQ2_Results<- read_csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
+table(filter(Lock_Guidance_CY18CQ2_Results,ITM_TYPE=='HDD')$Lock_Attain_Flag)
 ```
 
-```{r Analyze the Accuracy}
+```{r Analyze the Accuracy of Lock_Guidance}
 Lock_Guidance_CY18CQ2_Results %>% 
   filter(ITM_TYPE=="HDD") %>%
-  select(Actual,APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
+  select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
 GGally::ggpairs() -> p
 ```
 
 Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
 
-Let me downlaod the data from IRIS and use them to forecast HDD demand for calendar quarter.
-
-## Load Database from SQL Server
-
-```{r ConnectDB}
-library(DBI)
-db = dbConnect(odbc::odbc(),
-               driver = 'SQL Server',
-               server = 'IRISAGL01.aus.amer.dell.com',
-               user = 'Yao_Z',
-               password = 'y67uhgt$Y')
-```
-
-Download the latest HDD sales data from SQL server.
-
-The following query was from Cinkie.
-```{sql hdd_qty, connection=db, output.var = 'hdd_qty_updated0731'}
-SELECT 
-D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date, C.Cfg_Desc AS CFG,
-CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END AS LOB_DESC, BRAND_CATG_DESC,
-SUM(ITM_QTY) AS ITM_QTY
-FROM [IRIS].[Base].[ISG_Business_Transformation.isgordersdetails] AS A
-LEFT JOIN IRIS_Data_Mart.dbo.SKU_CFG_Bridge AS C
-ON A.ITM_NBR = C.sku_num
-JOIN IRIS.DIM.date_hyperion_v AS D
-ON A.ORD_DT = D.Fiscal_Date
-WHERE Commodity_Desc = 'Hard Drive'
-AND DELL_EMC_ORDER_FLAG = 'DELL' AND TYPE_DESC = 'Enterprise Solution Group PBU' AND Fiscal_Yr >= 'FY17'
-GROUP BY 
-D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date,
-C.Cfg_Desc,
-CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END, BRAND_CATG_DESC
-```
-
-```{r Check the CFGs}
-unique(hdd_qty_updated0731$CFG) %>% length()
-```
-
-I would like to add [AND C.Cfg_Desc LIKE '%HDD%'].
-
-```{sql hdd_qty, connection=db, output.var = 'hdd_qty_updated0731_HDD'}
-SELECT 
-D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date, C.Cfg_Desc AS CFG,
-CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END AS LOB_DESC, BRAND_CATG_DESC,
-SUM(ITM_QTY) AS ITM_QTY
-FROM [IRIS].[Base].[ISG_Business_Transformation.isgordersdetails] AS A
-LEFT JOIN IRIS_Data_Mart.dbo.SKU_CFG_Bridge AS C
-ON A.ITM_NBR = C.sku_num
-JOIN IRIS.DIM.date_hyperion_v AS D
-ON A.ORD_DT = D.Fiscal_Date
-WHERE Commodity_Desc = 'Hard Drive' AND C.Cfg_Desc LIKE '%HDD%'
-AND DELL_EMC_ORDER_FLAG = 'DELL' AND TYPE_DESC = 'Enterprise Solution Group PBU' AND Fiscal_Yr >= 'FY17'
-GROUP BY 
-D.Fiscal_Yr, D.Calendar_Qtr, D.Fiscal_Mo,D.Fiscal_Wk, D.Fiscal_Wk_End_Date,
-C.Cfg_Desc,
-CASE WHEN FMLY_PFOLIO_DESC LIKE '%DSS%' OR FMLY_PFOLIO_DESC LIKE '%DCS%' THEN 'PowerEdge - ESI' ELSE LOB_DESC END, BRAND_CATG_DESC
-```
-
-```{r Check the CFGs}
-unique(hdd_qty_updated0731_HDD$CFG) %>% length()
-```
-
-```{r Compre two versions of hdd_qty using two queries}
-hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS.feather') # They query I used till 07/31/2018
-week_data <- hdd_qty %>% group_by(Fiscal_Wk) %>%
-  summarise(Fiscal_Wk_QTY=sum(PART_QTY))
-week_data$version <- 'Yao Current'
-
-week_data.2 <- hdd_qty_updated0731_HDD %>% group_by(Fiscal_Wk) %>%
-  summarise(Fiscal_Wk_QTY=sum(ITM_QTY))
-week_data.2$version <- 'Cinkie Updated'
-
-week_data %>% full_join(week_data.2) -> week_data.compare
-
-p_week <- week_data.compare %>%
-  ggplot(aes(x=Fiscal_Wk,y=Fiscal_Wk_QTY,group=version,color=version)) +
-  geom_point(size = 2) +
-  geom_line(size = 1.5) +
-  labs(title = 'Overall HDD Weekly Sales', x = "Fiscal Week", y = "Part Quantity") + 
-  theme_minimal(base_size = 18) + 
-  scale_color_tableau('tableau10medium') + 
-  scale_x_discrete(breaks = c('FY17W01', 'FY18W01', 'FY19W01','FY20W01')) +
-  theme(legend.position = 'bottom',plot.title = element_text(hjust = 0.5)) +
-  scale_y_continuous(label=comma) + expand_limits(y = 0) #+ coord_cartesian(ylim = c(0,2100000))
-p_week
-
-```
-
-They are not that different! Since I need the Calendar_Qtr, use the hdd_qty_updated0731_HDD then.
-
-```{r Deal with missing data}
-Weekly_HDD_QTY_combined <- hdd_qty_updated0731_HDD %>% group_by(Fiscal_Wk,Fiscal_Wk) %>% summarise(Fiscal_Wk_QTY=sum(ITM_QTY))
-# 7/20/2018 128 weeks
-
-apply(hdd_qty_updated0731_HDD, 2, function(x) any(is.na(x)))
-
-write_feather(hdd_qty_updated0731_HDD,'~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
-```
-
-```{r Load CFG attributes and save the data for Power BI}
-library(readr)
-HDD_SSD_Memory_CFG_Attributes <- read_csv("~/Yao_Excels/HDD SSD Memory CFG Attributes.csv")
-hdd_qty_updated0731_HDD <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
-
-# HDD Weekly Sales
-week_data <- hdd_qty_updated0731_HDD %>% left_join(HDD_SSD_Memory_CFG_Attributes)
-
-write_excel_csv(week_data,'~/Yao_Excels/HDD_CFG_wk.csv')
-```
-
-To create clusters, I will use Region and Volume to classify CFGs. I thought that the "Small and medium" are more stable so that it could be easier to forecast. Actually, "strategic and large" groups have lower errors. This is because that it is easier to forcast large volume compared to low volume.
-
-```{r By Volume}
-HDD_data <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
-HDD_data %>% 
-  group_by(CFG,Calendar_Qtr) %>%
-  summarise(CFG_Qtr_QTY=sum(ITM_QTY)) %>% 
-  ungroup() %>%
-  group_by(CFG) %>%
-  summarise(Avg_Qtr_HDD_QTY = sum(CFG_Qtr_QTY)/n_distinct(Calendar_Qtr)) %>% 
-  mutate(HDD_Volume_Group = case_when(
-    Avg_Qtr_HDD_QTY <= 100 ~ 'Small',
-    Avg_Qtr_HDD_QTY > 100 & Avg_Qtr_HDD_QTY <= 1000 ~ 'Medium',
-    Avg_Qtr_HDD_QTY > 1000 & Avg_Qtr_HDD_QTY <= 10000 ~ 'Large',
-    Avg_Qtr_HDD_QTY > 10000 ~ 'Strategic'
-  )) -> HDD_data.grouped
-
-table(HDD_data.grouped$HDD_Volume_Group)
-
-week_data %>% left_join(HDD_data.grouped) -> data.joined
-write_excel_csv(data.joined,'~/Yao_Excels/HDD_CFG_wk.csv')
-```
-
 If I want to forecast on Clusters before CFGs, I would use Volume and Interface.
 
 To compare my forecast results to the Lock Guidance, I will forecast for each CFG first.
 
-
-```{r setup, include=FALSE}
+```{r setup 2, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 999)
 library(lubridate)
@@ -214,7 +82,7 @@ hdd_qty <- read_csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
 
 # Weekly data For each Region
 hdd_qty %>% 
-  filter(ESI_Flag=="N") %>%
+  filter(ESI_Flag=="N"& ITM_TYPE=="HDD") %>%
   group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk,Calendar_Qtr) %>%
   summarise(HDD_QTY = sum(ITM_QTY)) -> HDD_Weekly
 
@@ -225,11 +93,11 @@ HDD_Weekly %>%
   group_by(CFG,Calendar_Qtr) %>%
   summarise(Cal_Qtr_HDD = sum(HDD_QTY)) %>%
   left_join(Lock_Guidance_CY18CQ2_Results %>% 
-                           select(CFG,Calendar_Qtr,Lock_Forecast,Actual)) %>%
+                           select(CFG,Calendar_Qtr,Lock_Forecast)) %>%
   na.omit() -> df.combined
 ```
 
-The Actual from Hyperiod is different from Cinkie's data?? Ask her later.
+The above Actual data has been confirmed.
 
 ```{r Forecast Function}
 myforecast <- function(){
@@ -250,7 +118,7 @@ myforecast <- function(){
     # print(forecastPeriodLen)
     
     Fcast_Wk_num <- 13
-    if (nrow(test) < Fcast_Wk_num | nrow(train)<nrow(test)){ 
+    if (nrow(test) < Fcast_Wk_num | nrow(train)<3){ 
       OneQtrFcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],rep(NA,Fcast_Wk_num+1))
       MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
       next
@@ -412,35 +280,37 @@ write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0810.csv")
 ```{r Error Calculation}
 yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0810.csv', na = 'NA')
 
-result_q2_yao = yao_hdd %>% 
-  filter(Quarter == 'CY18CQ2') %>% 
-  group_by(CFG, Model) %>% 
+result_4q_yao = yao_hdd %>% 
+  filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
+  group_by(CFG, Model,Quarter) %>% 
   summarise(Yao_QTY = sum(HDD_QTY)) %>% 
   filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
+  ungroup() %>%
   select(-Model) %>% 
   rename(HDD_Actual = Yao_QTY) %>% 
   left_join(
     yao_hdd %>% 
-      filter(Quarter == 'CY18CQ2') %>% 
-      group_by(CFG, Model) %>% 
+      filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
+      group_by(CFG, Model,Quarter) %>% 
       summarise(Yao_QTY = sum(HDD_QTY)) %>% 
-      filter(!is.na(Yao_QTY) & Model != 'Actual'), by = 'CFG') %>% 
+      filter(!is.na(Yao_QTY) & Model != 'Actual')) %>% 
   mutate(APE = abs(HDD_Actual - Yao_QTY) / HDD_Actual,
          AttainmentRate = HDD_Actual/Yao_QTY) 
 
-result_q2_yao  %>%
+result_4q_yao  %>%
   group_by(Model) %>% 
-  summarise(MAPE = mean(APE))
+  summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> result_4q
 
 # Commodity "Accuracy"
-result_q2_yao %>%
-  select(CFG,Model,AttainmentRate) %>%
-  filter(AttainmentRate>=0.8 & AttainmentRate<=1.2) %>%
-  spread(Model,AttainmentRate) %>%
-  ungroup() %>%
-  select(-CFG) %>%
-  lapply(function(x) length(which(!is.na(x)))/length(x)) %>%
-  lapply(function(x)  as.numeric(as.character(x))) %>% data.frame() -> CommodityAccuracy
+# num_CFG <- length(unique(result_4q_yao$CFG))
+# result_4q_yao %>%
+#   select(CFG,Model,Quarter,AttainmentRate) %>%
+#   filter(AttainmentRate>=0.8 & AttainmentRate<=1.2) %>%
+#   spread(Model,AttainmentRate) %>%
+#   ungroup() %>%
+#   select(-CFG,-Quarter) %>%
+#   sapply(function(x) length(which(!is.na(x)))/length(x)) %>%
+#   data.frame() -> CommodityAccuracy
 
 # Compare to Lock Guidance
 yao_hdd %>% 
@@ -459,34 +329,33 @@ yao_hdd %>%
   spread(Model,Yao_QTY) -> Yao_HDD_QTY
 
 Lock_Guidance_CY18CQ2_Results %>% 
-  select(CFG,Lock_Forecast,Actual) %>%
+  select(CFG,Lock_Forecast) %>%
   left_join(Yao_HDD_QTY, by = 'CFG') %>%
-  gather(Model,HDD_QTY,-CFG,-Actual,-HDD_Actual) %>%
-  filter(!is.na(Actual) & !is.na(HDD_Actual)) %>% # only keep the common CFGs
+  gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
+  filter(!is.na(HDD_Actual)) %>% # only keep the common CFGs
   mutate(APE = abs(HDD_Actual - HDD_QTY) / HDD_Actual,
          AttainmentRate = HDD_Actual/HDD_QTY) -> result_q2
 
 result_q2  %>%
   group_by(Model) %>% 
-  summarise(MAPE = mean(APE, na.rm = TRUE)) -> MAPE.results
+  summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> MAPE.results
 
 # Commodity "Accuracy"
 result_q2 %>%
   select(CFG,Model,AttainmentRate) %>%
-  filter(AttainmentRate>=0.8 & AttainmentRate<=1.2) %>%
-  spread(Model,AttainmentRate) %>%
-  ungroup() %>%
-  select(-CFG) %>%
-  lapply(function(x) length(which(!is.na(x)))/length(x)) %>%
-  lapply(function(x)  as.numeric(as.character(x))) %>% data.frame() %>%
-  gather(Model,Accuracy) %>%
+  mutate(Attain_Flag = case_when(
+    AttainmentRate >= 0.8 & AttainmentRate<=1.2 ~ 'Green',
+    AttainmentRate < 0.8~ 'Blue',
+    AttainmentRate > 1.2~ 'Red')) %>%
+  group_by(Model) %>%
+    summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag)) %>%
   left_join(MAPE.results) -> EvalResults
   
 write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0810.csv")
 
 # Analyze the errors
-result_q2 %>% 
-  left_join(select(data.joined,CFG,CFG_GROUP,Interface,Interface_w_Speed,Capacity,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num,Avg_Qtr_HDD_QTY,HDD_Volume_Group) %>% unique() %>% arrange(CFG), by = 'CFG') -> Error.w.Attributes
+# result_q2 %>% 
+#   left_join(select(data.joined,CFG,CFG_GROUP,Interface,Interface_w_Speed,Capacity,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num,Avg_Qtr_HDD_QTY,HDD_Volume_Group) %>% unique() %>% arrange(CFG), by = 'CFG') -> Error.w.Attributes
 
 write_excel_csv(Error.w.Attributes,"~/Yao_Excels/Error_W_Attributes_v2.csv")
 ```
@@ -496,4 +365,5 @@ write_excel_csv(Error.w.Attributes,"~/Yao_Excels/Error_W_Attributes_v2.csv")
 # for Parallel package
 stopImplicitCluster()
 ```
+
 
