@@ -342,13 +342,13 @@ result_q2  %>%
 
 # Commodity "Accuracy"
 result_q2 %>%
-  select(CFG,Model,AttainmentRate) %>%
+  select(CFG,Model,AttainmentRate,HDD_Actual) %>%
   mutate(Attain_Flag = case_when(
     AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
     AttainmentRate < 0.8~ 'Blue',
     AttainmentRate > 1.2~ 'Red')) %>%
   group_by(Model) %>%
-    summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag)) %>%
+  summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) %>%
   left_join(MAPE.results) -> EvalResults
   
 write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0814.csv")
