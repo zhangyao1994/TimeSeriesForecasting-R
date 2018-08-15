@@ -129,7 +129,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     
     Truth <- c(CFGgroups[i_CFG],Fcast_Qtr,'Actual',test$y)
     
-    # Naive model uses the latest data for forecast.
+    # Naive Model uses the latest data for forecast.
     Naive <- c(CFGgroups[i_CFG],Fcast_Qtr,'naive',tail(train$y,Fcast_Wk_num))
     
     # Add time series signature # For the last date of train region
@@ -182,7 +182,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     RF_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'RF',tail(yhat_test,Fcast_Wk_num))
     
     # Xgboost
-    # Train the xgboost model using the "xgboost" function
+    # Train the xgboost Model using the "xgboost" function
     dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
     xgModel = xgboost(data = dtrain, nrounds = 20, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
     # Make the predictions on the test data
@@ -393,4 +393,31 @@ write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0815.csv")
 stopImplicitCluster()
 ```
 
+```{r Viz the errors}
+## compare Models result with LOCK in terms of attainment 
+result_q2 %>%
+  select(CFG,Model,AttainmentRate,HDD_Actual) %>%
+  mutate(Flag = case_when(
+    AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
+    AttainmentRate < 0.8~ 'Blue',
+    AttainmentRate > 1.2~ 'Red')) %>%
+  group_by(Model, Flag) %>% 
+  summarise(n_cfg = n_distinct(CFG)) %>% 
+  mutate(n_cfg_ptg = n_cfg/sum(n_cfg)) %>% 
+  ungroup() %>% 
+  mutate(Flag = coalesce(Flag, "NA")) %>% 
+  mutate(Flag = ordered(Flag, levels = c("Red", "Green", "Blue", "NA"))) %>% 
+  mutate(Model = ordered(Model, levels = c("ARIMA", "Prophet", "stlar", "ets", "naive", "XGBoost", "Lock_Forecast"))) %>%
+  filter(!is.na(Model)) %>%
+  ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
+  geom_bar(stat = 'identity') +
+  geom_text(aes(label = paste0(round(100*n_cfg_ptg), '%')), colour = 'white', fontface = 'bold',
+            size = 4, position = position_stack(), vjust = 1) +
+  scale_fill_manual(values = c("#E15759", "#59A14F","#4E79A7", "grey")) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_hc() +
+  theme(axis.text.x = element_text(size = 8)) +
+  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = "CY18CQ2; Forecast 1 quarter ahead")
+
+```
 
