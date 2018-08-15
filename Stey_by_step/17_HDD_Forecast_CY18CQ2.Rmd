@@ -1,7 +1,7 @@
 ---
-title: "HDD Forecast CY18CQ2"
+title: "HDD Forecast CY18CQ2, compared to Lock"
 author: "Yao"
-date: "August 1, 2018"
+date: "August 15, 2018"
 output: html_document
 ---
 
@@ -9,32 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(feather)
-```
 
-Got Lock Guidance CY18CQ2 Results from Cinkie.
-
-```{r Read the Loack Guidance CY18CQ2 Results}
-library(readr)
-# Lock Guidance from Cinkie on 8/13/2018
-Lock_Guidance_CY18CQ2_Results<- read_csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
-table(filter(Lock_Guidance_CY18CQ2_Results,ITM_TYPE=='HDD')$Lock_Attain_Flag)
-```
-
-```{r Analyze the Accuracy of Lock_Guidance}
-Lock_Guidance_CY18CQ2_Results %>% 
-  filter(ITM_TYPE=="HDD" & Lock_APE<=5) %>%
-  select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
-GGally::ggpairs()
-```
-
-Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
-
-If I want to forecast on Clusters before CFGs, I would use Volume and Interface.
-
-To compare my forecast results to the Lock Guidance, I will forecast for each CFG first.
-
-```{r setup 2, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 options(scipen = 999)
 library(lubridate)
 
@@ -71,61 +46,88 @@ library(seer)
 # Calculate the number of cores
 no_cores <- detectCores() - 1
 registerDoParallel(no_cores)
+
 ```
 
-## IRIS HDD Weekly Demand Forecasting for each CFG
+Got Lock Guidance CY18CQ2 Results from Cinkie.
+
+```{r Read the Loack Guidance CY18CQ2 Results}
+# Lock Guidance from Cinkie on 8/13/2018
+Lock_Guidance_CY18CQ2_Results<- read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
+table(filter(Lock_Guidance_CY18CQ2_Results,ITM_TYPE=='HDD')$Lock_Attain_Flag)
+
+```
+
+9/58 of CFGs' attainment rates were within [0.8,1.2]. In other words, the commodity "Accuracy" is 9/58=15.5%.
+
+```{r Analyze the Accuracy of Lock_Guidance}
+Lock_Guidance_CY18CQ2_Results %>% 
+  filter(ITM_TYPE=="HDD" & Lock_APE<=5) %>%
+  select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
+GGally::ggpairs()
+```
+
+Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
+
+If I want to forecast on Clusters before CFGs, I would use Volume and Interface.
+
+To compare my forecast results to the Lock Guidance, I will forecast for each CFG first.
+
+## HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-#hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
 # 8/9/2018 New Data from Cinkie
 hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
+indx <- c('Fiscal_Wk_End_Date','Fiscal_Wk','Fiscal_Mo','Calendar_Qtr')
+hdd_qty[indx] <- lapply(hdd_qty[indx], function(x) as.character(x))
 
-# Weekly data For each Region
-hdd_qty %>% 
-  filter(ESI_Flag=="N"& ITM_TYPE=="HDD") %>%
-  group_by(CFG, Fiscal_Wk_End_Date,Fiscal_Wk,Calendar_Qtr) %>%
-  summarise(HDD_QTY = sum(ITM_QTY)) -> HDD_Weekly
-
-HDD_Weekly %>% 
-  filter(Calendar_Qtr=='CY18CQ2') %>%
-  select(CFG,Calendar_Qtr,HDD_QTY) %>%
-  ungroup() %>%
-  group_by(CFG,Calendar_Qtr) %>%
-  summarise(Cal_Qtr_HDD = sum(HDD_QTY)) %>%
-  left_join(Lock_Guidance_CY18CQ2_Results %>% 
-                           select(CFG,Calendar_Qtr,Lock_Forecast)) %>%
-  na.omit() -> df.combined
+# Extracted Needed Weekly data
+commodity.data.selected <- hdd_qty %>% 
+  filter(ESI_Flag=="N"& ITM_TYPE=="HDD") %>% # We don't forecast ESI_Flag=="Y" and I only focus on HDD for now.
+  select(CFG, Calendar_Qtr, Fiscal_Mo, Fiscal_Wk_End_Date,ITM_QTY)
+  
+# Extract the Quarter and Month pairs
+qtr_mo_tbl <- commodity.data.selected %>% 
+  distinct(Calendar_Qtr, Fiscal_Mo) %>% 
+  arrange(Fiscal_Mo)
+  
 ```
 
 The above Actual data has been confirmed.
 
 ```{r Forecast Function}
-myforecast <- function(){
-  df <- data.frame(ds = temp_data$date, y = temp_data$HDD_QTY)
-  n <- nrow(df)
-  
+oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num = 13, forecastPeriodLen = 26){
+
   MultiQtr_Fcast <- list()
-  for (i_Qtr in 1:6){
+  
+  for (Fcast_Qtr in Fcast_Qtrs){
+    
     # Split into training and test sets
-    # i=1: At the beginning of FY17Q4, forecast FY18Q1 and FY17Q4 and only calculate the accuracy of FY18Q1
-    Fcast_TimePoint <- filter(temp_data,Calendar_Qtr==Fcast_Calendar_Qtr[i_Qtr])$date[1]
-    Fcast_EndPoint <- filter(temp_data,Calendar_Qtr==Fcast_Calendar_Qtr[i_Qtr+2])$date[1]
-    train <- df %>% filter(ds < Fcast_TimePoint)
-    test <- df %>% filter(ds >= Fcast_TimePoint & ds < Fcast_EndPoint)
+    train_end_mo = qtr_mo_tbl$Fiscal_Mo[min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr)) - MonthAhead]
     
-    WeekAhead <- length(filter(temp_data,Calendar_Qtr==Fcast_Calendar_Qtr[i_Qtr])$date)
-    forecastPeriodLen <- length(filter(temp_data,Calendar_Qtr==Fcast_Calendar_Qtr[i_Qtr+1])$date) + WeekAhead
-    # print(forecastPeriodLen)
+    train <- oneCFG.data %>% 
+      filter(Fiscal_Mo < train_end_mo) %>%
+      mutate(ds = mdy(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
+      select(ds,y)
+
+    test <- oneCFG.data %>% 
+      filter(Calendar_Qtr == Fcast_Qtr) %>%
+      mutate(ds = mdy(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
+      select(ds,y)
     
-    Fcast_Wk_num <- 13
-    if (nrow(test) < Fcast_Wk_num | nrow(train)<3){ 
-      OneQtrFcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],rep(NA,Fcast_Wk_num+1))
+    ## forecast the CFGs that exists in botn train and test set
+    ## filter CFGs that have less than 3 historical data points
+    
+    if (nrow(test) < 1 | nrow(train)<=3){ 
+      OneQtrFcast <- c(CFGgroups[i_CFG],Fcast_Qtr,rep(NA,Fcast_Wk_num+1))
       MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
       next
     }
     
-    Truth <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'Actual',tail(test$y,Fcast_Wk_num))
-    Naive <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'naive',tail(train$y,Fcast_Wk_num))
+    Truth <- c(CFGgroups[i_CFG],Fcast_Qtr,'Actual',test$y)
+    
+    # Naive model uses the latest data for forecast.
+    Naive <- c(CFGgroups[i_CFG],Fcast_Qtr,'naive',tail(train$y,Fcast_Wk_num))
     
     # Add time series signature # For the last date of train region
     train_augmented <- train[nrow(train),] %>%
@@ -136,22 +138,19 @@ myforecast <- function(){
     # TBATS
     fit <- tbats(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
-    TBATS_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'TBATS',tail(fcast$mean,Fcast_Wk_num))
+    TBATS_fcast_tmp <- tail(fcast$mean,Fcast_Wk_num)
+    TBATS_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'TBATS',TBATS_fcast_tmp)
     
     # ARIMA
-    if (i_CFG %in% c(16,17,40,55,87)){
-      ARIMA_fcast <- (c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'ARIMA',rep(NA,Fcast_Wk_num)))
-    } else {
-      fit <- auto.arima(HDD.ts) # Some might fail # ,D=1
-      fcast <- forecast(fit,h=forecastPeriodLen)
-      ARIMA_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'ARIMA',tail(fcast$mean,Fcast_Wk_num))
-    }
+    fit <- auto.arima(HDD.ts)
+    fcast <- forecast(fit,h=forecastPeriodLen)
+    ARIMA_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ARIMA',tail(fcast$mean,Fcast_Wk_num))
     
     # Prophet
     m <- prophet(train)
     future <- make_future_dataframe(m, periods = forecastPeriodLen, freq = 'week',include_history = FALSE)
     fcast <- predict(m, future)
-    Prophet_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'Prophet',tail(fcast$yhat,Fcast_Wk_num))
+    Prophet_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Prophet',tail(fcast$yhat,Fcast_Wk_num))
     
     # lm
     # Add time series signature
@@ -171,60 +170,60 @@ myforecast <- function(){
     test_augmented <- test %>%
       tk_augment_timeseries_signature()
     yhat_test <- predict(fit, newdata = test_augmented)
-    lm_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'lm',tail(yhat_test,Fcast_Wk_num))
+    lm_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'lm',tail(yhat_test,Fcast_Wk_num))
     
     # Random Forest
     # Model using the augmented features
     fit <- randomForest(y ~ ., data = na.omit(temp))
     yhat_test <- predict(fit, newdata = test_augmented)
-    RF_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'RF',tail(yhat_test,Fcast_Wk_num))
+    RF_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'RF',tail(yhat_test,Fcast_Wk_num))
     
     # Xgboost
     # Train the xgboost model using the "xgboost" function
     dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
-    xgModel = xgboost(data = dtrain, nrounds = 15, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
+    xgModel = xgboost(data = dtrain, nrounds = 20, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
     # Make the predictions on the test data
     temp_test <- test_augmented[,colnames(temp)]
     preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-    Xgboost_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'Xgboost',tail(preds,Fcast_Wk_num))
+    Xgboost_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Xgboost',tail(preds,Fcast_Wk_num))
     
     # ets
     fit <- ets(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
-    ets_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'ets',tail(fcast$mean,Fcast_Wk_num))
+    ets_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ets',tail(fcast$mean,Fcast_Wk_num))
    
     # rw: random walk
     rw_fit <- rwf(HDD.ts,drift=FALSE, h=forecastPeriodLen)
     forecastRW <- forecast(rw_fit)$mean
-    rw_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'rw',tail(forecastRW,Fcast_Wk_num))
+    rw_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'rw',tail(forecastRW,Fcast_Wk_num))
     
     # rwd: random walk with drift
     rw_fit <- rwf(HDD.ts,drift=TRUE, h=forecastPeriodLen)
     forecastRWD <- forecast(rw_fit)$mean
-    rwd_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'rwd',tail(forecastRWD,Fcast_Wk_num))
+    rwd_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'rwd',tail(forecastRWD,Fcast_Wk_num))
     
     # wn: white noise # Calculate accuracy measure based on white noise process
     fit_WN <- auto.arima(HDD.ts, d=0, D=0, max.p=0, max.q = 0,
                      max.Q=0, max.P = 0)
     forecastWN <- forecast(fit_WN,h=forecastPeriodLen)$mean
-    wn_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'wn',tail(forecastWN,Fcast_Wk_num))
+    wn_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'wn',tail(forecastWN,Fcast_Wk_num))
     
     # theta: standard theta method
     # if (i_Qtr>2) {
     #   forecastTheta <- stheta(HDD.ts,h=forecastPeriodLen, s='additive')$mean
-    #   theta_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'theta',tail(forecastTheta,Fcast_Wk_num))
+    #   theta_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'theta',tail(forecastTheta,Fcast_Wk_num))
     # }
     # Error in decompose(y, type = s_type) : 
     #   time series has no or less than 2 periods
 
     # stlar
     forecastSTLAR <- stlar(HDD.ts,h=forecastPeriodLen)$mean
-    stlar_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'stlar',tail(forecastSTLAR,Fcast_Wk_num))
+    stlar_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'stlar',tail(forecastSTLAR,Fcast_Wk_num))
     
     # nn
     fit_nnetar <- nnetar(HDD.ts)
     forecastnnetar <- forecast(fit_nnetar, h=forecastPeriodLen)$mean
-    nn_fcast <- c(CFGgroups[i_CFG],Fcast_Calendar_Qtr[i_Qtr+1],'nn',tail(forecastnnetar,Fcast_Wk_num))
+    nn_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'nn',tail(forecastnnetar,Fcast_Wk_num))
 
     # snaive
     # forecastSNAIVE <- snaive(HDD.ts, h=forecastPeriodLen)$mean
@@ -236,6 +235,7 @@ myforecast <- function(){
     # mstlets
     
     OneQtrFcast <- rbind(Truth,Naive,TBATS_fcast,ARIMA_fcast,Prophet_fcast,lm_fcast,RF_fcast,Xgboost_fcast,ets_fcast,rw_fcast,rwd_fcast,wn_fcast,stlar_fcast,nn_fcast)
+    
     MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
   }
   return(MultiQtr_Fcast)
@@ -244,18 +244,16 @@ myforecast <- function(){
 
 
 ```{r Run the fuctions parallelly}
-HDD_Weekly$date <- mdy(HDD_Weekly$Fiscal_Wk_End_Date)
-CFGgroups <- levels(factor(HDD_Weekly$CFG)) 
-CFGgroups <- CFGgroups[CFGgroups %in% df.combined$CFG]
+
+CFGgroups <- levels(commodity.data.selected$CFG) 
 len <- length(CFGgroups)
 
-Fcast_Calendar_Qtr <- c("CY16CQ4","CY17CQ1","CY17CQ2","CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2","CY18CQ3") # This is the time point where you forecast.
+Fcast_Qtrs <- c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2") # The quarters that you want to forecast.
 
-# Use i_CFG=4 for test
 Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind,  .packages=c('tidyverse','forecast','forecTheta','seer','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
   # Forecast for each CFG
-  temp_data <- HDD_Weekly %>% filter(CFG==CFGgroups[i_CFG])
-  oneCFG_fcast <- myforecast()
+  oneCFG.data <- commodity.data.selected %>% filter(CFG==CFGgroups[i_CFG])
+  oneCFG_fcast <- oneCFG_forecast(oneCFG.data,Fcast_Qtrs)
   oneCFG_fcast
 }
 
@@ -265,16 +263,17 @@ dimnames(Comb_fcast)[[2]] <- c('CFG','Quarter','Model',as.character(weekNames))
 # HDD quntatity should be numeric.
 Comb_fcast[,4:ncol(Comb_fcast)] <- lapply(Comb_fcast[,4:ncol(Comb_fcast)], function(x) as.numeric(as.character(x)))
 Comb_fcast[,1:3] <- lapply(Comb_fcast[,1:3], function(x) as.character(x))
+
 # Transformation
 Comb_fcast %>% data.frame() %>% gather(key='Fiscal_Wk',value='HDD_QTY',W01:W13) -> All_fcast
-
 All_fcast[,1:4] <- lapply(All_fcast[,1:4], function(x) as.character(x))
 All_fcast$HDD_QTY <- as.numeric(as.character(All_fcast$HDD_QTY))
+All_fcast$HDD_QTY[All_fcast$HDD_QTY<0] <- 0
 
 # For plot, do not delete the NA for now.
 # saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0814.feather")
-write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0814.csv")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0815.feather")
+write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0815.csv")
 ```
 
 ```{r error calculate functions}
@@ -302,7 +301,7 @@ calculate_ape = function(y, yhat){
 
 
 ```{r Error Calculation}
-yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0814.csv', na = 'NA')
+yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0815.feather")
 
 result_4q_yao = yao_hdd %>% 
   filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
@@ -375,7 +374,7 @@ result_q2 %>%
   summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) %>%
   left_join(MAPE.results) -> EvalResults
   
-write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0814.csv")
+write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0815.csv")
 
 # Analyze the errors
 # result_q2 %>% 
