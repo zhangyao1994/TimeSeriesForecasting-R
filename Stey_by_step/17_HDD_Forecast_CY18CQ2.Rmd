@@ -22,9 +22,9 @@ table(filter(Lock_Guidance_CY18CQ2_Results,ITM_TYPE=='HDD')$Lock_Attain_Flag)
 
 ```{r Analyze the Accuracy of Lock_Guidance}
 Lock_Guidance_CY18CQ2_Results %>% 
-  filter(ITM_TYPE=="HDD") %>%
+  filter(ITM_TYPE=="HDD" & Lock_APE<=5) %>%
   select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
-GGally::ggpairs() -> p
+GGally::ggpairs()
 ```
 
 Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
@@ -78,7 +78,7 @@ registerDoParallel(no_cores)
 ```{r load the data}
 #hdd_qty <- read_feather('~/Yao_Rdata/HDD_QTY_IRIS_0731.feather')
 # 8/9/2018 New Data from Cinkie
-hdd_qty <- read_csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
+hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
 
 # Weekly data For each Region
 hdd_qty %>% 
@@ -182,7 +182,7 @@ myforecast <- function(){
     # Xgboost
     # Train the xgboost model using the "xgboost" function
     dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
-    xgModel = xgboost(data = dtrain, nrounds = 20) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
+    xgModel = xgboost(data = dtrain, nrounds = 15, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
     # Make the predictions on the test data
     temp_test <- test_augmented[,colnames(temp)]
     preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
@@ -277,6 +277,30 @@ write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0814.feather")
 write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0814.csv")
 ```
 
+```{r error calculate functions}
+calculate_attain = function(y, yhat){
+  
+  ## attain = actual / forecast
+  if (yhat != 0){
+    attain = y/yhat
+  }else if (y == 0 & yhat == 0){
+    attain = 1
+  }else if ( y != 0 & yhat == 0){
+    attain = 0
+  }
+  
+  return(attain)
+}
+
+calculate_ape = function(y, yhat){
+  
+  ape = ifelse(y == 0 & yhat == 0, 0, abs(y-yhat)/y)
+  
+  return(ifelse(is.infinite(ape), NA, ape))
+}
+```
+
+
 ```{r Error Calculation}
 yao_hdd = read_csv('~/Yao_Excels/All_fcast_CV_Cal_Qtr_0814.csv', na = 'NA')
 
@@ -294,8 +318,8 @@ result_4q_yao = yao_hdd %>%
       group_by(CFG, Model,Quarter) %>% 
       summarise(Yao_QTY = sum(HDD_QTY)) %>% 
       filter(!is.na(Yao_QTY) & Model != 'Actual')) %>% 
-  mutate(APE = abs(HDD_Actual - Yao_QTY) / HDD_Actual,
-         AttainmentRate = HDD_Actual/Yao_QTY) 
+  mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
+         AttainmentRate = calculate_attain(HDD_Actual,Yao_QTY))#HDD_Actual/Yao_QTY) 
 
 result_4q_yao  %>%
   group_by(Model) %>% 
@@ -333,8 +357,8 @@ Lock_Guidance_CY18CQ2_Results %>%
   left_join(Yao_HDD_QTY, by = 'CFG') %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
   filter(!is.na(HDD_Actual)) %>% # only keep the common CFGs
-  mutate(APE = abs(HDD_Actual - HDD_QTY) / HDD_Actual,
-         AttainmentRate = HDD_Actual/HDD_QTY) -> result_q2
+  mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
+         AttainmentRate = calculate_attain(HDD_Actual,HDD_QTY)) -> result_q2
 
 result_q2  %>%
   group_by(Model) %>% 
