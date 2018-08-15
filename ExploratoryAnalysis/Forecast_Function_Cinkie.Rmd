@@ -28,7 +28,7 @@ calculate_attain = function(y, yhat){
 calculate_attain_flag = function(attain){
   
   ## attain = actual / forecast
-  if (attain >= 0.8 | attain <= 1.2){
+  if (attain >= 0.8 & attain <= 1.2){
     attain_flag = "Green"
   }else if (attain > 1.2){
     attain_flag = "Red"
@@ -437,3 +437,4 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
   
   return(part_result)
 }
+```
