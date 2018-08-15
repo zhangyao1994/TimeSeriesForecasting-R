@@ -7,6 +7,43 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+options(scipen = 999)
+library(lubridate)
+
+# Load egboost relevant libraries
+library(quantmod); library(TTR); library(xgboost);
+
+# Load timetk package
+library(tidyquant)
+library(timetk)
+library(broom)
+
+# Random Forest
+library(party)
+library(randomForest)
+
+# Load TBATS package, as well as for ARIMA
+library(forecast)
+library(forecTheta) # Theta
+
+# Load Facebook Prophet package
+library(Rcpp) 
+library(prophet)
+
+library(scales) # for percent
+
+# make the code parallel using 'parallel' package
+library(iterators)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+library(seer)
+ 
+# Calculate the number of cores
+no_cores <- detectCores() - 1
+registerDoParallel(no_cores)
 ```
 
 ```{r forecast_functions}
@@ -186,7 +223,7 @@ xgboost_one = function(data_part_train, data_part_test, one_item){
   
   data_part_train_one = data_part_train_one %>% 
     select(-CFG_New) %>% 
-    mutate(ds = as.Date(ds))
+    mutate(ds = mdy(ds))
   
   timetk_train_data = data_part_train_one %>% 
     tk_augment_timeseries_signature() %>% 
@@ -194,7 +231,7 @@ xgboost_one = function(data_part_train, data_part_test, one_item){
   
   m1 = xgboost(data = as.matrix(select(timetk_train_data, -y)), label = timetk_train_data$y, nrounds = 20, verbose = 0)
   
-  timetk_test_data = as.Date(data_part_test_one$ds) %>% 
+  timetk_test_data = mdy(data_part_test_one$ds) %>% 
     tk_get_timeseries_signature() %>% 
     select(-c(index, diff, month.lbl, wday.lbl))
   
@@ -261,7 +298,7 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
           group_by(CFG_New) %>% 
           summarise(y = sum(y)) %>% 
           arrange(desc(y)) %>% 
-          mutate(cum_ptg = cumsum(y)/sum(y)) %>% 
+          mutate(cum_ptg = cumsum(y)/sum(y)) %>% #? What does cumsum(y)/sum(y) tell us?
           filter(cum_ptg > cfg_ptg_threshold)
         
         ## filter CFGs that have less than 3 historical data points
@@ -269,8 +306,8 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
           group_by(CFG_New) %>% 
           filter(y > 0) %>% 
           filter(Fiscal_Wk_End_Date == min(Fiscal_Wk_End_Date)) %>% 
-          mutate(ds = ymd(Fiscal_Wk_End_Date),
-                 rm_flag = (ds + weeks(3) >= max(data_part_tmp_train$Fiscal_Wk_End_Date))) %>% 
+          mutate(ds = mdy(Fiscal_Wk_End_Date),
+                 rm_flag = (ds + weeks(3) >= max(mdy(data_part_tmp_train$Fiscal_Wk_End_Date)))) %>% 
           filter(rm_flag)
         
         cfg_list_rm = unique(union(cfg_list_tbl_sm_vol$CFG_New, cfg_list_tbl_no_data$CFG_New))
@@ -391,7 +428,7 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
       
       # ---------------------------------------- XGBoost ---------------------------------------- #####
       result_xgboost = foreach(i = 1:length(cfg_list_test), .combine = rbind, 
-                               .packages = c("dplyr", "xgboost", "timetk"), 
+                               .packages = c("dplyr", "xgboost", "timetk","lubridate"), 
                                .export = c("xgboost_one", "calculate_attain", "calculate_attain_flag", "calculate_ape")) %dopar% {
                                  
                                  xgboost_one(data_part_train, data_part_test, cfg_list_test[i])  } 
@@ -430,7 +467,7 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
       
       part_result = bind_rows(part_result, result_tmp)
       
-      rm(result_tmp, data_part_tmp, data_part_tmp_train, data_part_tmp_test, data_test_rm_vol, result_tmp)
+      rm(result_tmp, data_part_tmp, data_part_tmp_train, data_part_tmp_test, data_test_rm_vol)
     }## end of ITM_TYPE loop
     
   }## end of test quarters loop
@@ -438,3 +475,68 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
   return(part_result)
 }
 ```
+
+## IRIS HDD Weekly Demand Forecasting for each CFG
+
+```{r load the data}
+hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
+indx <- c('Fiscal_Wk_End_Date','Fiscal_Wk','Fiscal_Mo')
+hdd_qty[indx] <- lapply(hdd_qty[indx], function(x) as.character(x))
+
+Results_Cinkie <- forecast_cfg(hdd_qty,c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2"),3,'Weekly')
+
+Cinkie_4q <- Results_Cinkie %>%
+  group_by(model) %>% 
+  summarise(MAPE = mean(ape, na.rm = TRUE),weighted.MAPE = weighted.mean(ape,y, na.rm = TRUE))
+
+Cinkie_q2 <- Results_Cinkie %>%
+  filter(test_qtr=='CY18CQ2') %>%
+  group_by(model) %>% 
+  summarise(MAPE = mean(ape, na.rm = TRUE),weighted.MAPE = weighted.mean(ape,y, na.rm = TRUE))
+
+# Lock Guidance from Cinkie on 8/13/2018
+Lock_Guidance_CY18CQ2_Results <- read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
+Lock_Guidance_CY18CQ2_Results$model <- 'Lock'
+Lock_Guidance_CY18CQ2_Results$CFG <- as.character(Lock_Guidance_CY18CQ2_Results$CFG)
+
+results.joined <- Results_Cinkie %>% 
+  filter(test_qtr=='CY18CQ2') %>%
+  select(CFG_New,model,ape) %>%
+  rename(CFG = CFG_New) %>%
+  full_join(Lock_Guidance_CY18CQ2_Results %>% 
+              rename(ape = Lock_APE) %>%
+              select(CFG,model,ape))
+
+results.joined %>%
+  spread(model,ape) %>%
+  na.omit() %>%
+  left_join(Lock_Guidance_CY18CQ2_Results %>%
+              select(CFG,Actual)) %>%
+  left_join(Results_Cinkie %>% 
+              filter(test_qtr=='CY18CQ2') %>%
+              select(CFG_New,y) %>%
+              rename(CFG = CFG_New)) %>%
+  unique() -> tmp
+
+models <- colnames(tmp)[2:7]
+
+# Weighted MAPE Calculation
+Weighted.MAPEs <- sapply(tmp[models], function(ape) weighted.MAPE = weighted.mean(ape,tmp$y, na.rm = TRUE))
+# Normal MAPE Calculation
+MAPEs <- sapply(tmp[models], function(ape) MAPE = mean(ape, na.rm = TRUE))
+```
+
+```{r Test the functions, eval=FALSE, include=FALSE}
+data_part = hdd_qty
+test_qtrs = c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2")
+ahead = 3
+data_cadence = "Weekly"
+cfg_ptg_threshold = 1
+cfg_col = "CFG"
+
+test_qtr = test_qtrs[1]
+cmdy = cmdy_list[1]
+
+one_item = cfg_list_test[1]
+```
+
