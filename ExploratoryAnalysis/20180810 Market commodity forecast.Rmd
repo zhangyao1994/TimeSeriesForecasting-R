@@ -763,7 +763,7 @@ forecast_cfg = function(data_part, test_qtrs, ahead = 3, data_cadence = c("Daily
       
       part_result = bind_rows(part_result, result_tmp)
       
-      rm(result_tmp, data_part_tmp, data_part_tmp_train, data_part_tmp_test, data_test_rm_vol, result_tmp)
+      rm(result_tmp, data_part_tmp, data_part_tmp_train, data_part_tmp_test, data_test_rm_vol)
     }## end of ITM_TYPE loop
     
   }## end of test quarters loop
@@ -781,6 +781,8 @@ library(doParallel)
 
 data_part_cfg_wk_in_scope = data_part_cfg_wk %>% 
   filter(grepl('ESG|MEM', CFG) & ESI_Flag == 'N')
+
+write_feather(data_part_cfg_wk_in_scope,'~/Yao_Rdata/data_part_cfg_wk_in_scope.feather')
 
 ## initiate parallel computing
 cores = detectCores()
@@ -904,6 +906,7 @@ part_cfg_result_3 %>%
 lock_guidance = read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
 
 lock_q2_result = lock_guidance %>% 
+  select(-Actual,-ITM_TYPE,-Interface) %>%
   filter(Calendar_Qtr == 'CY18CQ2' & Lock_Forecast > 0) %>% 
   left_join(data_part_cfg_wk %>% 
               filter(Calendar_Qtr == 'CY18CQ2') %>% 

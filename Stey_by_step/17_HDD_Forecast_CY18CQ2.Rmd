@@ -54,13 +54,11 @@ Got Lock Guidance CY18CQ2 Results from Cinkie.
 ```{r Read the Loack Guidance CY18CQ2 Results}
 # Lock Guidance from Cinkie on 8/13/2018
 Lock_Guidance_CY18CQ2_Results<- read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
-table(filter(Lock_Guidance_CY18CQ2_Results,ITM_TYPE=='HDD')$Lock_Attain_Flag)
-
 ```
 
 9/58 of CFGs' attainment rates were within [0.8,1.2]. In other words, the commodity "Accuracy" is 9/58=15.5%.
 
-```{r Analyze the Accuracy of Lock_Guidance}
+```{r Analyze the Accuracy of Lock_Guidance, eval=FALSE, include=FALSE}
 Lock_Guidance_CY18CQ2_Results %>% 
   filter(ITM_TYPE=="HDD" & Lock_APE<=5) %>%
   select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
@@ -76,16 +74,22 @@ To compare my forecast results to the Lock Guidance, I will forecast for each CF
 ## HDD Weekly Demand Forecasting for each CFG
 
 ```{r load the data}
-# 8/9/2018 New Data from Cinkie
-hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
-indx <- c('Fiscal_Wk_End_Date','Fiscal_Wk','Fiscal_Mo','Calendar_Qtr')
-hdd_qty[indx] <- lapply(hdd_qty[indx], function(x) as.character(x))
+# # 8/9/2018 New Data from Cinkie
+# hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
+# indx <- c('Fiscal_Wk_End_Date','Fiscal_Wk','Fiscal_Mo','Calendar_Qtr')
+# hdd_qty[indx] <- lapply(hdd_qty[indx], function(x) as.character(x))
+# 
+# # Extracted Needed Weekly data
+# commodity.data.selected <- hdd_qty %>% 
+#   filter(ESI_Flag=="N"& ITM_TYPE=="HDD") %>% # We don't forecast ESI_Flag=="Y" and I only focus on HDD for now.
+#   select(CFG, Calendar_Qtr, Fiscal_Mo, Fiscal_Wk_End_Date,ITM_QTY)
 
-# Extracted Needed Weekly data
-commodity.data.selected <- hdd_qty %>% 
-  filter(ESI_Flag=="N"& ITM_TYPE=="HDD") %>% # We don't forecast ESI_Flag=="Y" and I only focus on HDD for now.
+# Use the IRIS data # 08/15/2018 the latest data!
+data_part_cfg_wk_in_scope <- read_feather('~/Yao_Rdata/data_part_cfg_wk_in_scope.feather')
+commodity.data.selected <- data_part_cfg_wk_in_scope %>%
+  filter(ITM_TYPE == 'HDD') %>%
   select(CFG, Calendar_Qtr, Fiscal_Mo, Fiscal_Wk_End_Date,ITM_QTY)
-  
+
 # Extract the Quarter and Month pairs
 qtr_mo_tbl <- commodity.data.selected %>% 
   distinct(Calendar_Qtr, Fiscal_Mo) %>% 
@@ -93,7 +97,6 @@ qtr_mo_tbl <- commodity.data.selected %>%
   
 ```
 
-The above Actual data has been confirmed.
 
 ```{r Forecast Function}
 oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num = 13, forecastPeriodLen = 26){
@@ -107,12 +110,12 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     
     train <- oneCFG.data %>% 
       filter(Fiscal_Mo < train_end_mo) %>%
-      mutate(ds = mdy(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
+      mutate(ds = ymd(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
       select(ds,y)
 
     test <- oneCFG.data %>% 
       filter(Calendar_Qtr == Fcast_Qtr) %>%
-      mutate(ds = mdy(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
+      mutate(ds = ymd(Fiscal_Wk_End_Date), y = ITM_QTY) %>%
       select(ds,y)
     
     ## forecast the CFGs that exists in botn train and test set
@@ -245,7 +248,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
 
 ```{r Run the fuctions parallelly}
 
-CFGgroups <- levels(commodity.data.selected$CFG) 
+CFGgroups <- levels(as.factor(commodity.data.selected$CFG))
 len <- length(CFGgroups)
 
 Fcast_Qtrs <- c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2") # The quarters that you want to forecast.
@@ -352,6 +355,7 @@ yao_hdd %>%
   spread(Model,Yao_QTY) -> Yao_HDD_QTY
 
 Lock_Guidance_CY18CQ2_Results %>% 
+  filter(ITM_TYPE == 'HDD') %>%
   select(CFG,Lock_Forecast) %>%
   left_join(Yao_HDD_QTY, by = 'CFG') %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
