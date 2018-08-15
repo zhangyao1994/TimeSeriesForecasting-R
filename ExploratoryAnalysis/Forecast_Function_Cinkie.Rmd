@@ -483,6 +483,9 @@ hdd_qty <- read.csv('~/Yao_Excels/ESG HDD Weekly Volume.csv')
 indx <- c('Fiscal_Wk_End_Date','Fiscal_Wk','Fiscal_Mo')
 hdd_qty[indx] <- lapply(hdd_qty[indx], function(x) as.character(x))
 
+hdd_qty %>% 
+  filter(ESI_Flag=="N" & ITM_TYPE=="HDD") -> hdd_qty
+
 Results_Cinkie <- forecast_cfg(hdd_qty,c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2"),3,'Weekly')
 
 Cinkie_4q <- Results_Cinkie %>%
