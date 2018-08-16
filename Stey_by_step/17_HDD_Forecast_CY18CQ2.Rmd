@@ -240,7 +240,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
 CFGgroups <- levels(as.factor(commodity.data.selected$CFG))
 len <- length(CFGgroups)
 
-Fcast_Qtrs <- c("CY17CQ1","CY17CQ2","CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2") # The quarters that you want to forecast.
+Fcast_Qtrs <- c("CY17CQ1","CY17CQ2","CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2","CY18CQ3","CY18CQ4") # The quarters that you want to forecast.
 
 Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind,  .packages=c('tidyverse','forecast','forecTheta','seer','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
   # Forecast for each CFG
