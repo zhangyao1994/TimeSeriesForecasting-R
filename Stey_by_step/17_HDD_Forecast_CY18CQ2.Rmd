@@ -262,7 +262,7 @@ Comb_fcast %>% gather(key='Fiscal_Wk',value='HDD_QTY',W01:W13) -> All_fcast
 All_fcast$HDD_QTY[All_fcast$HDD_QTY<0] <- 0
 
 # For plot, do not delete the NA for now.
-# saveRDS(All_fcast, 'All_fcast_CV.rds') # my_data <- readRDS(file)
+  
 write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
 write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0816.csv")
 ```
@@ -452,6 +452,17 @@ result_4q_yao  %>%
   facet_wrap(~Quarter)
 
 # Compare to Lock Guidance in CY18CQ2 ####
+All_fcast.wLock_CY18CQ2 <- yao_hdd %>% 
+  filter(Quarter == 'CY18CQ2') %>% 
+  group_by(CFG, Model) %>% 
+  summarise(HDD_QTY = sum(HDD_QTY)) %>%
+  full_join(Lock_Guidance_CY18CQ2_Results %>% 
+              filter(ITM_TYPE == 'HDD') %>%
+              select(CFG,Lock_Forecast) %>%
+              gather(Model,HDD_QTY,Lock_Forecast))
+
+write.csv(All_fcast.wLock_CY18CQ2,"~/Yao_Excels/All_fcast.wLock_CY18CQ2.csv")
+
 yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
   group_by(CFG, Model) %>% 
