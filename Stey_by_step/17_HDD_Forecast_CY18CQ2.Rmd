@@ -136,6 +136,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     fit <- auto.arima(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
     ARIMA_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ARIMA',tail(fcast$mean,Fcast_Wk_num))
+    ARIMA4Xgboost <- c(fit$fitted,tail(fcast$mean,Fcast_Wk_num))
     
     # ----------------------Prophet---------------------- ######
     m <- prophet(train)
@@ -143,45 +144,12 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     fcast <- predict(m, future)
     Prophet_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Prophet',tail(fcast$yhat,Fcast_Wk_num))
     
-    # ----------------------lm---------------------- ######
-    # Add time series signature
-    train_augmented <- train %>%
-      tk_augment_timeseries_signature()
-    # maunually drop unvalid variables
-    temp <-
-      train_augmented %>% select(-wday.lbl,-month.lbl,-diff)
-    # Remove the column with only one value
-    if (nrow(temp)>1) {
-      temp <- Filter(function(x)(length(unique(x))>1), temp)
-    }
-    
-    # Model using the augmented features
-    fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
-    # We need to again augment the time series signature to the test set.
-    test_augmented <- test %>%
-      tk_augment_timeseries_signature()
-    yhat_test <- predict(fit, newdata = test_augmented)
-    lm_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'lm',tail(yhat_test,Fcast_Wk_num))
-    
-    # ----------------------Random Forest---------------------- ######
-    # Model using the augmented features
-    fit <- randomForest(y ~ ., data = na.omit(temp))
-    yhat_test <- predict(fit, newdata = test_augmented)
-    RF_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'RF',tail(yhat_test,Fcast_Wk_num))
-    
-    # ----------------------Xgboost----------------------######
-    # Train the xgboost Model using the "xgboost" function
-    dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
-    xgModel = xgboost(data = dtrain, nrounds = 20, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
-    # Make the predictions on the test data
-    temp_test <- test_augmented[,colnames(temp)]
-    preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
-    Xgboost_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Xgboost',tail(preds,Fcast_Wk_num))
-    
+        
     # ----------------------ets---------------------- ######
     fit <- ets(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
     ets_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ets',tail(fcast$mean,Fcast_Wk_num))
+    ets4Xgboost <- c(fit$fitted,tail(fcast$mean,Fcast_Wk_num))
    
     # ----------------------rw: random walk---------------------- ######
     rw_fit <- rwf(HDD.ts,drift=FALSE, h=forecastPeriodLen)
@@ -216,6 +184,41 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     fit_nnetar <- nnetar(HDD.ts)
     forecastnnetar <- forecast(fit_nnetar, h=forecastPeriodLen)$mean
     nn_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'nn',tail(forecastnnetar,Fcast_Wk_num))
+    
+    # ----------------------lm---------------------- ######
+    # Add time series signature
+    train_augmented <- train %>%
+      tk_augment_timeseries_signature()
+    # maunually drop unvalid variables
+    temp <-
+      train_augmented %>% select(-wday.lbl,-month.lbl,-diff) %>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(train)),Naive=ifelse(nrow(train)>forecastPeriodLen,c(rep(0,forecastPeriodLen),head(train$y,nrow(train)-forecastPeriodLen)),rep(0,nrow(train))))
+    # Remove the column with only one value
+    if (nrow(temp)>1) {
+      temp <- Filter(function(x)(length(unique(x))>1), temp)
+    }
+    
+    # Model using the augmented features
+    fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
+    # We need to again augment the time series signature to the test set.
+    test_augmented <- test %>%
+      tk_augment_timeseries_signature() %>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(test)),Naive=ifelse(nrow(train)>nrow(test),tail(train$y,nrow(test)),c(train$y,rep(0,nrow(test)-nrow(train)))))
+    yhat_test <- predict(fit, newdata = test_augmented)
+    lm_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'lm',tail(yhat_test,Fcast_Wk_num))
+    
+    # ----------------------Random Forest---------------------- ######
+    # Model using the augmented features
+    fit <- randomForest(y ~ ., data = na.omit(temp))
+    yhat_test <- predict(fit, newdata = test_augmented)
+    RF_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'RF',tail(yhat_test,Fcast_Wk_num))
+    
+    # ----------------------Xgboost----------------------######
+    # Train the xgboost Model using the "xgboost" function
+    dtrain = xgb.DMatrix(data = as.matrix(select(temp,-y,-ds)), label = temp$y)
+    xgModel = xgboost(data = dtrain, nrounds = 20, verbose = 0) # sqrt(nrow(dtrain)) for classification, ceiling(nrow(dtrain)/3) for regression
+    # Make the predictions on the test data
+    temp_test <- test_augmented[,colnames(temp)]
+    preds = predict(xgModel, as.matrix(select(temp_test,-y,-ds)))
+    Xgboost_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Xgboost',tail(preds,Fcast_Wk_num))
 
     # snaive
     # forecastSNAIVE <- snaive(HDD.ts, h=forecastPeriodLen)$mean
@@ -263,8 +266,8 @@ All_fcast$HDD_QTY[All_fcast$HDD_QTY<0] <- 0
 
 # For plot, do not delete the NA for now.
   
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
-write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0816.csv")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0820_ARIMA_Naive.feather")
+write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0820.csv")
 ```
 
 ```{r error calculate functions}
@@ -292,7 +295,7 @@ calculate_ape = function(y, yhat){
 
 
 ```{r Error Calculation}
-yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
+yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0820_ARIMA_Naive.feather")
 
 # All quarters from CY17CQ1-CY18CQ2 ####
 result_yao = yao_hdd %>% 
@@ -332,7 +335,7 @@ result_yao  %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Errors",
-       title = paste("HDD Quarterly CFG MAPE (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") +
+       title = paste("HDD Quarterly CFG MAPE (",length(unique(result_yao$CFG)),'CFGs included )'),fill = "Metrics") +
   facet_wrap(~Quarter)
 
 # 4 quarters from CY17CQ3-CY18CQ2 ####
@@ -349,7 +352,8 @@ result_4q_yao = yao_hdd %>%
       filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
       group_by(CFG, Model,Quarter) %>% 
       summarise(Yao_QTY = sum(HDD_QTY)) %>% 
-      filter(!is.na(Yao_QTY) & Model != 'Actual')) %>% 
+      filter(!is.na(Yao_QTY) & Model != 'Actual')
+    ) %>% 
   mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
          AttainmentRate = calculate_attain(HDD_Actual,Yao_QTY))#HDD_Actual/Yao_QTY) 
 
