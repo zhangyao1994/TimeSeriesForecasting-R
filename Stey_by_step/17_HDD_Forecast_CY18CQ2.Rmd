@@ -110,8 +110,9 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     ## forecast the CFGs that exists in botn train and test set
     ## filter CFGs that have less than 3 historical data points
     if (nrow(test) < 1 | nrow(train)<=3){ 
-      OneQtrFcast <- c(CFGgroups[i_CFG],Fcast_Qtr,rep(NA,Fcast_Wk_num+1))
-      MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
+      # Maybe it is better to leave these CFGs out than adding them with NAs. # 8/21/2018
+      #OneQtrFcast <- c(CFGgroups[i_CFG],Fcast_Qtr,rep(NA,Fcast_Wk_num+1))
+      #MultiQtr_Fcast <- rbind(MultiQtr_Fcast,OneQtrFcast)
       next
     }
     
@@ -266,7 +267,7 @@ All_fcast$HDD_QTY[All_fcast$HDD_QTY<0] <- 0
 
 # For plot, do not delete the NA for now.
   
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0820_ARIMA_Naive.feather")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0821_ARIMA_Naive.feather")
 write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0820.csv")
 ```
 
@@ -295,13 +296,16 @@ calculate_ape = function(y, yhat){
 
 
 ```{r Error Calculation}
-yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0820_ARIMA_Naive.feather")
+yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
+# 0814 is bad.
+# 0816 Xgboost is not bad.
+# 0820 Xgboost embedded with ARIMA
 
 # All quarters from CY17CQ1-CY18CQ2 ####
 result_yao = yao_hdd %>% 
   # filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
   group_by(CFG, Model,Quarter) %>% 
-  summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+  summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
   filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
   ungroup() %>%
   select(-Model) %>% 
@@ -310,7 +314,7 @@ result_yao = yao_hdd %>%
     yao_hdd %>% 
       # filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
       group_by(CFG, Model,Quarter) %>% 
-      summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+      summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
       filter(!is.na(Yao_QTY) & Model != 'Actual')) %>% 
   mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
          AttainmentRate = calculate_attain(HDD_Actual,Yao_QTY))#HDD_Actual/Yao_QTY) 
@@ -336,13 +340,14 @@ result_yao  %>%
   theme_bw(base_size = 14) +
   labs(x = '', y = "Errors",
        title = paste("HDD Quarterly CFG MAPE (",length(unique(result_yao$CFG)),'CFGs included )'),fill = "Metrics") +
-  facet_wrap(~Quarter)
+  facet_wrap(~Quarter) + 
+  theme(legend.position="bottom")
 
 # 4 quarters from CY17CQ3-CY18CQ2 ####
 result_4q_yao = yao_hdd %>% 
   filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
   group_by(CFG, Model,Quarter) %>% 
-  summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+  summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
   filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
   ungroup() %>%
   select(-Model) %>% 
@@ -351,7 +356,7 @@ result_4q_yao = yao_hdd %>%
     yao_hdd %>% 
       filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
       group_by(CFG, Model,Quarter) %>% 
-      summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+      summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
       filter(!is.na(Yao_QTY) & Model != 'Actual')
     ) %>% 
   mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
@@ -364,7 +369,7 @@ result_4q_yao  %>%
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive')) %>%
+  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive') & Metrics=='weighted.MAPE') %>% # 
   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
@@ -374,7 +379,9 @@ result_4q_yao  %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Errors",
-       title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("CY17CQ3-CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics")
+       title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("CY17CQ3-CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
+  theme(legend.position="bottom") #+
+  #facet_wrap(~Metrics,scales = "free") #MAPEis too high to show.
 
 # By quarter
 result_4q_yao  %>%
@@ -382,7 +389,7 @@ result_4q_yao  %>%
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive')) %>%
+  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive') & Metrics=='weighted.MAPE') %>%
   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
@@ -393,7 +400,8 @@ result_4q_yao  %>%
   theme_bw(base_size = 14) +
   labs(x = '', y = "Errors",
        title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") +
-  facet_wrap(~Quarter)
+  facet_wrap(~Quarter) + 
+  theme(legend.position="bottom")
 
 # Commodity "Accuracy" #####
 result_4q_yao  %>%
@@ -459,7 +467,7 @@ result_4q_yao  %>%
 All_fcast.wLock_CY18CQ2 <- yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
   group_by(CFG, Model) %>% 
-  summarise(HDD_QTY = sum(HDD_QTY)) %>%
+  summarise(HDD_QTY = sum(HDD_QTY, na.rm = TRUE)) %>%
   full_join(Lock_Guidance_CY18CQ2_Results %>% 
               filter(ITM_TYPE == 'HDD') %>%
               select(CFG,Lock_Forecast) %>%
@@ -470,7 +478,7 @@ write.csv(All_fcast.wLock_CY18CQ2,"~/Yao_Excels/All_fcast.wLock_CY18CQ2.csv")
 yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
   group_by(CFG, Model) %>% 
-  summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+  summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
   filter(!is.na(Yao_QTY) & Model == 'Actual') %>% 
   select(-Model) %>% 
   rename(HDD_Actual = Yao_QTY) %>% 
@@ -478,14 +486,14 @@ yao_hdd %>%
     yao_hdd %>% 
       filter(Quarter == 'CY18CQ2') %>% 
       group_by(CFG, Model) %>% 
-      summarise(Yao_QTY = sum(HDD_QTY)) %>% 
+      summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
       filter(!is.na(Yao_QTY) & Model != 'Actual'), by = 'CFG') %>%
   spread(Model,Yao_QTY) -> Yao_HDD_QTY
 
 Lock_Guidance_CY18CQ2_Results %>% 
   filter(ITM_TYPE == 'HDD') %>%
   select(CFG,Lock_Forecast) %>%
-  full_join(Yao_HDD_QTY, by = 'CFG') %>%
+  left_join(Yao_HDD_QTY, by = 'CFG') %>%
   filter(!is.na(HDD_Actual)) %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
   mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
@@ -494,11 +502,13 @@ Lock_Guidance_CY18CQ2_Results %>%
 Lock_Guidance_CY18CQ2_Results %>% 
   filter(ITM_TYPE == 'HDD') %>%
   select(CFG,Lock_Forecast) %>%
-  full_join(Yao_HDD_QTY, by = 'CFG') %>%
+  left_join(Yao_HDD_QTY, by = 'CFG') %>%
   filter(!is.na(HDD_Actual) & !is.na(Lock_Forecast)) %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
   mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
-         AttainmentRate = calculate_attain(HDD_Actual,HDD_QTY))  %>%
+         AttainmentRate = calculate_attain(HDD_Actual,HDD_QTY))  -> MAPE_q2
+
+MAPE_q2 %>%
   group_by(Model) %>% 
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> MAPE.results
 
@@ -515,7 +525,8 @@ MAPE.results %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Errors",
-       title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead"),fill = "Metrics")
+       title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+  theme(legend.position="bottom")
 
 # Commodity "Accuracy"
 result_q2 %>%
@@ -527,6 +538,22 @@ result_q2 %>%
   group_by(Model) %>%
   summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) %>%
   left_join(MAPE.results) -> EvalResults
+
+# Weighted Accuracy
+EvalResults %>%
+  gather(Metrics,values,Accuracy:weighted.MAPE) %>%
+  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast") & Metrics=='weighted.Accuracy') %>%
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
+  ggplot(aes(x = Model , y = values, fill = Metrics)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
+            size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_economist() +
+  theme_bw(base_size = 14) +
+  labs(x = '', y = "Errors",
+       title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+  theme(legend.position="bottom")
 
 ## compare Models result with LOCK in terms of attainment 
 result_q2 %>%
@@ -579,19 +606,19 @@ result_q2 %>%
        caption = "Error rate > 500% excluded from chart")
 
 ## relationship between volume and attainment rate # I do not like this plot.
-result_q2 %>%
-  ungroup() %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  facet_wrap(~Model) +
-  geom_point() +
-  scale_y_continuous(labels = scales::percent, limits = c(0,5)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 1 quarter ahead",
-       caption = "Error rate > 500% excluded from chart")
+# result_q2 %>%
+#   ungroup() %>% 
+#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
+#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast")) %>%
+#   ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
+#   facet_wrap(~Model) +
+#   geom_point() +
+#   scale_y_continuous(labels = scales::percent, limits = c(0,5)) +
+#   scale_x_continuous(labels = scales::comma) +
+#   theme_classic(base_size = 14) +
+#   labs(x = "CFG Total Volume", y = "Attainment Rate",
+#        title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 1 quarter ahead",
+#        caption = "Error rate > 500% excluded from chart")
 
 # results joined with Attributes ####
 cfg_attr_group = read.csv('~/Yao_Excels/HDD SSD Memory CFG Attributes.csv')
@@ -621,4 +648,23 @@ GGally::ggpairs()
 
 # Lock_Forecast shows different performance on different Interface_w_Speed, Data_Entrypted_Code, and Data_Sector_Format, but Xgboost does not.
 ```
+
+```{r Viz selected CFG}
+CFG.selected <- 'HDD_4TB_SATA6G_ISE_ESG'
+#'ESGP_HDD_SAS12G_4KN_FIPS140_6TB_7_2K_3_5' # One CFG has high errors with Xgboost.
+
+# HDD Weekly Sales
+temp_data <- filter(commodity.data.selected,CFG==CFG.selected)
+temp_data %>%
+  ggplot(aes(x=Fiscal_Wk_End_Date,y=ITM_QTY,group=1)) +
+  geom_point(size = 2) +
+  geom_line(size = 1.5) +
+  labs(title = paste(CFG.selected,'HDD Weekly Sales'), x = "Fiscal Week", y = "Part Quantity") + 
+  theme_minimal(base_size = 14) + 
+  scale_color_tableau('Tableau 10') + 
+  scale_x_discrete(breaks = c('2017-07-07','2017-11-03','2018-01-05', '2018-04-20','2018-07-06')) +
+  theme(legend.position = 'none',plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(label=comma) + expand_limits(y = 0) 
+```
+
 
