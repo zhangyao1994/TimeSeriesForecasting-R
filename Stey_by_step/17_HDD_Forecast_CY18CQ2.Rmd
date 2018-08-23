@@ -55,6 +55,7 @@ Got Lock Guidance CY18CQ2 Results from Cinkie.
 ```{r Read the Loack Guidance CY18CQ2 Results}
 # Lock Guidance from Cinkie on 8/13/2018 but only trust the Lock_FOrecast please.
 Lock_Guidance_CY18CQ2_Results<- read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
+MRP_CY18CQ2 <- read.csv('~/Yao_Excels/CY18CQ2 MRP FY19Q1W1 Version.csv')
 ```
 
 ```{r Analyze the Accuracy of Lock_Guidance, eval=FALSE, include=FALSE}
@@ -82,21 +83,32 @@ commodity.data.selected <- data_part_cfg_wk_in_scope %>%
 
 # Extract the Quarter and Month pairs
 qtr_mo_tbl <- commodity.data.selected %>% 
-  distinct(Calendar_Qtr, Fiscal_Mo) %>% 
+  distinct(Calendar_Qtr, Fiscal_Mo) %>%
   arrange(Fiscal_Mo)
   
+qtr_mo_wk_tbl <- commodity.data.selected %>% 
+  distinct(Calendar_Qtr, Fiscal_Mo, Fiscal_Wk_End_Date) %>%
+  arrange(Fiscal_Mo)
 ```
 
 
 ```{r Forecast Function}
-oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num = 13, forecastPeriodLen = 26){
+oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 2){
 
   MultiQtr_Fcast <- list()
-  
+
   for (Fcast_Qtr in Fcast_Qtrs){
+    # How many weeks in this forecasting quarter
+    Fcast_Wk_num = nrow(filter(qtr_mo_wk_tbl,Calendar_Qtr==Fcast_Qtr))
     
     # ----------------------Split into training and test sets---------------------- ######
     train_end_mo = qtr_mo_tbl$Fiscal_Mo[min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr)) - MonthAhead]
+    
+    test_begin_mon = qtr_mo_tbl$Fiscal_Mo[min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr))]
+    
+    wk_ahead = nrow(filter(qtr_mo_wk_tbl,Fiscal_Mo>=train_end_mo & Fiscal_Mo<test_begin_mon))
+    
+    forecastPeriodLen = Fcast_Wk_num + wk_ahead
     
     train <- oneCFG.data %>% 
       filter(Fiscal_Mo < train_end_mo) %>%
@@ -193,7 +205,8 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
       tk_augment_timeseries_signature()
     # maunually drop unvalid variables
     temp <-
-      train_augmented %>% select(-wday.lbl,-month.lbl,-diff) %>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(train)),Naive=ifelse(nrow(train)>forecastPeriodLen,c(rep(0,forecastPeriodLen),head(train$y,nrow(train)-forecastPeriodLen)),rep(0,nrow(train))))
+      train_augmented %>% select(-wday.lbl,-month.lbl,-diff) 
+    # %>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(train)),Naive=ifelse(nrow(train)>forecastPeriodLen,c(rep(0,forecastPeriodLen),head(train$y,nrow(train)-forecastPeriodLen)),rep(0,nrow(train))))
     # Remove the column with only one value
     if (nrow(temp)>1) {
       temp <- Filter(function(x)(length(unique(x))>1), temp)
@@ -203,7 +216,7 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
     fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
     # We need to again augment the time series signature to the test set.
     test_augmented <- test %>%
-      tk_augment_timeseries_signature() %>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(test)),Naive=ifelse(nrow(train)>nrow(test),tail(train$y,nrow(test)),c(train$y,rep(0,nrow(test)-nrow(train)))))
+      tk_augment_timeseries_signature() #%>% cbind(ARIMA=head(ARIMA4Xgboost,nrow(test)),Naive=ifelse(nrow(train)>nrow(test),tail(train$y,nrow(test)),c(train$y,rep(0,nrow(test)-nrow(train)))))
     yhat_test <- predict(fit, newdata = test_augmented)
     lm_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'lm',tail(yhat_test,Fcast_Wk_num))
     
@@ -245,7 +258,8 @@ oneCFG_forecast <- function(oneCFG.data,Fcast_Qtrs,MonthAhead = 3, Fcast_Wk_num 
 CFGgroups <- levels(as.factor(commodity.data.selected$CFG))
 len <- length(CFGgroups)
 
-Fcast_Qtrs <- c("CY17CQ1","CY17CQ2","CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2","CY18CQ3","CY18CQ4") # The quarters that you want to forecast.
+Fcast_Qtrs <- c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2") # The quarters that you want to forecast.
+#         "CY17CQ1","CY17CQ2",,"CY18CQ3","CY18CQ4"
 
 Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind,  .packages=c('tidyverse','forecast','forecTheta','seer','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
   # Forecast for each CFG
@@ -268,8 +282,8 @@ All_fcast$HDD_QTY[All_fcast$HDD_QTY<0] <- 0
 
 # For plot, do not delete the NA for now.
   
-write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0821_ARIMA_Naive.feather")
-write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0820.csv")
+write_feather(All_fcast,"~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0823.feather")
+#write_excel_csv(All_fcast,"~/Yao_Excels/All_fcast_CV_Cal_Qtr_0820.csv")
 ```
 
 ```{r error calculate functions}
@@ -297,7 +311,7 @@ calculate_ape = function(y, yhat){
 
 
 ```{r Error Calculation}
-yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
+yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0823.feather")
 # 0814 is bad.
 # 0816 Xgboost is not bad.
 # 0820 Xgboost embedded with ARIMA
@@ -345,7 +359,11 @@ result_yao  %>%
   theme(legend.position="bottom")
 
 # 4 quarters from CY17CQ3-CY18CQ2 ####
-result_4q_yao = yao_hdd %>% 
+MRP_Quarterly <- read.csv('~/Yao_Excels/Quarterly MRP.csv')
+MRP_Quarterly$Model <- "MRP"
+rename(MRP_Quarterly,"Yao_QTY"="MRP","Quarter"="Calendar_Qtr") -> MRP_Quarterly
+
+result_4q_yao_wMRP = yao_hdd %>% 
   filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
   group_by(CFG, Model,Quarter) %>% 
   summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
@@ -358,12 +376,14 @@ result_4q_yao = yao_hdd %>%
       filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
       group_by(CFG, Model,Quarter) %>% 
       summarise(Yao_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
-      filter(!is.na(Yao_QTY) & Model != 'Actual')
-    ) %>% 
+      filter(!is.na(Yao_QTY) & Model != 'Actual') %>% 
+      full_join(MRP_Quarterly)
+  ) %>%
+  #filter(!is.na(HDD_Actual)) %>%
   mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
          AttainmentRate = calculate_attain(HDD_Actual,Yao_QTY))#HDD_Actual/Yao_QTY) 
 
-result_4q_yao %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao
+#result_4q_yao %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao
 
 # MAPE and weighted.MAPE #####
 # result_4q_yao  %>%
@@ -387,13 +407,13 @@ result_4q_yao %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao
 
 # By quarter ----
 # MAPE # Too high to show...
-result_4q_yao  %>%
+result_4q_yao_wMRP  %>%
   group_by(Model,Quarter) %>% 
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive') & Metrics=='MAPE') %>% #'wn','RF','Prophet',
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
+  filter(Model %in% c("ARIMA", "ets","Prophet", "RF", "stlar", "Xgboost", "naive","MRP") & Metrics=='MAPE') %>% #"wn", 
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -407,13 +427,13 @@ result_4q_yao  %>%
   theme(legend.position="none")
 
 # Weighted MAPE
-result_4q_yao  %>%
+result_4q_yao_wMRP %>%
   group_by(Model,Quarter) %>% 
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive') & Metrics=='weighted.MAPE') %>% #'wn','RF','Prophet',
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
+  filter(Model %in% c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP") & Metrics=='weighted.MAPE') %>% #'wn','RF','Prophet',
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -427,7 +447,7 @@ result_4q_yao  %>%
   theme(legend.position="none")
 
 # Commodity "Accuracy" #####
-result_4q_yao  %>%
+result_4q_yao_wMRP  %>%
  select(CFG,Model ,AttainmentRate,HDD_Actual,Quarter) %>%
   group_by(Model) %>%
   mutate(Attain_Flag = case_when(
@@ -436,7 +456,7 @@ result_4q_yao  %>%
     AttainmentRate > 1.2~ 'Red')) %>%
   summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) -> Accuracy.4q
 
-result_4q_yao  %>%
+result_4q_yao_wMRP  %>%
   select(CFG,Model,AttainmentRate,HDD_Actual) %>%
   mutate(Flag = case_when(
     AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
@@ -448,7 +468,7 @@ result_4q_yao  %>%
   ungroup() %>% 
   mutate(Flag = coalesce(Flag, "NA")) %>% 
   mutate(Flag = ordered(Flag, levels = c( "NA","Red", "Green", "Blue"))) %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
   filter(!is.na(Model)) %>%
   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
   geom_bar(stat = 'identity') +
@@ -461,7 +481,7 @@ result_4q_yao  %>%
   labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY17CQ3-CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'))
 
 # By quarter
-result_4q_yao  %>%
+result_4q_yao_wMRP  %>%
  select(CFG,Model ,AttainmentRate,HDD_Actual,Quarter) %>%
   group_by(Model,Quarter) %>%
   mutate(Attain_Flag = case_when(
@@ -470,8 +490,8 @@ result_4q_yao  %>%
     AttainmentRate > 1.2~ 'Red')) %>%
   summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) -> Accuracy.4q.byQuarter
 
-result_4q_yao  %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive')) %>% #'wn','RF','Prophet',
+result_4q_yao_wMRP  %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive','wn','RF','Prophet','MRP')) %>% #
   select(CFG,Model,AttainmentRate,HDD_Actual,Quarter) %>%
   mutate(Flag = case_when(
     AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
@@ -483,7 +503,7 @@ result_4q_yao  %>%
   ungroup() %>% 
   mutate(Flag = coalesce(Flag, "NA")) %>% 
   mutate(Flag = ordered(Flag, levels = c( "NA","Red", "Green", "Blue"))) %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','wn','RF','Prophet','MRP'))) %>%
   filter(!is.na(Model)) %>%
   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
   geom_bar(stat = 'identity') +
@@ -500,8 +520,8 @@ result_4q_yao  %>%
 Accuracy.4q.byQuarter %>%
   gather(Metrics,values,Accuracy,weighted.Accuracy) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast") & Metrics=='weighted.Accuracy') %>% # 'RF','wn','Prophet',
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast",'MRP') & Metrics=='weighted.Accuracy') %>% # 'RF','wn','Prophet',
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast",'MRP'))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -515,14 +535,14 @@ Accuracy.4q.byQuarter %>%
   facet_wrap(~Quarter)
 
 # Compare to Lock Guidance in CY18CQ2 ####
-All_fcast.wLock_CY18CQ2 <- yao_hdd %>% 
-  filter(Quarter == 'CY18CQ2') %>% 
-  group_by(CFG, Model) %>% 
-  summarise(HDD_QTY = sum(HDD_QTY, na.rm = TRUE)) %>%
-  full_join(Lock_Guidance_CY18CQ2_Results %>% 
-              filter(ITM_TYPE == 'HDD') %>%
-              select(CFG,Lock_Forecast) %>%
-              gather(Model,HDD_QTY,Lock_Forecast))
+# All_fcast.wLock_CY18CQ2 <- yao_hdd %>% 
+#   filter(Quarter == 'CY18CQ2') %>% 
+#   group_by(CFG, Model) %>% 
+#   summarise(HDD_QTY = sum(HDD_QTY, na.rm = TRUE)) %>%
+#   left_join(Lock_Guidance_CY18CQ2_Results %>% 
+#               filter(ITM_TYPE == 'HDD') %>%
+#               select(CFG,Lock_Forecast) %>%
+#               gather(Model,HDD_QTY,Lock_Forecast))
 
 #write.csv(All_fcast.wLock_CY18CQ2,"~/Yao_Excels/All_fcast.wLock_CY18CQ2.csv")
 
@@ -541,10 +561,15 @@ yao_hdd %>%
       filter(!is.na(Yao_QTY) & Model != 'Actual'), by = 'CFG') %>%
   spread(Model,Yao_QTY) -> Yao_HDD_QTY
 
+MRP_CY18CQ2 %>%
+  group_by(CFG) %>%
+  summarise(MRP = sum(MRP, na.rm = TRUE)) -> MRP_CY18CQ2_Sum
+
 Lock_Guidance_CY18CQ2_Results %>% 
   filter(ITM_TYPE == 'HDD') %>%
   select(CFG,Lock_Forecast) %>%
   left_join(Yao_HDD_QTY, by = 'CFG') %>%
+  left_join(MRP_CY18CQ2_Sum,by = 'CFG') %>%
   filter(!is.na(HDD_Actual)) %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
   mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
@@ -554,6 +579,7 @@ Lock_Guidance_CY18CQ2_Results %>%
   filter(ITM_TYPE == 'HDD') %>%
   select(CFG,Lock_Forecast) %>%
   left_join(Yao_HDD_QTY, by = 'CFG') %>%
+  left_join(MRP_CY18CQ2_Sum,by = 'CFG') %>%
   filter(!is.na(HDD_Actual) & !is.na(Lock_Forecast)) %>%
   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
   mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
@@ -564,20 +590,20 @@ MAPE_q2 %>%
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> MAPE.results
 
 # MAPE and WMAPE
-MAPE.results %>%
-  gather(Metrics,values,MAPE,weighted.MAPE) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast")) %>%
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
-  ggplot(aes(x = Model , y = values, fill = Metrics)) +
-  geom_bar(stat = 'identity', position = 'dodge') +
-  geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
-            size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
-  scale_y_continuous(labels = scales::percent) +
-  scale_fill_economist() +
-  theme_bw(base_size = 14) +
-  labs(x = '', y = "Errors",
-       title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
-  theme(legend.position="bottom")
+# MAPE.results %>%
+#   gather(Metrics,values,MAPE,weighted.MAPE) %>%
+#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast","MRP")) %>%
+#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast",'MRP'))) %>%
+#   ggplot(aes(x = Model , y = values, fill = Metrics)) +
+#   geom_bar(stat = 'identity', position = 'dodge') +
+#   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
+#             size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
+#   scale_y_continuous(labels = scales::percent) +
+#   scale_fill_economist() +
+#   theme_bw(base_size = 14) +
+#   labs(x = '', y = "Errors",
+#        title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+#   theme(legend.position="bottom")
 
 # Commodity "Accuracy"
 result_q2 %>%
@@ -593,8 +619,8 @@ result_q2 %>%
 # Weighted Accuracy
 EvalResults %>%
   gather(Metrics,values,Accuracy:weighted.MAPE) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast") & Metrics=='weighted.Accuracy') %>%
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
+  filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast","MRP") & Metrics=='weighted.Accuracy') %>%
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast","MRP"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -610,8 +636,8 @@ EvalResults %>%
 EvalResults$Model[EvalResults$Model=="Lock_Forecast"] <- "Lock"
 EvalResults %>%
   gather(Metrics,values,Accuracy:weighted.MAPE) %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock")) %>% # 'wn', "wn",'RF',"RF",'Prophet',  & Metrics != "MAPE"
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "stlar",  "Xgboost", "naive", "Lock"))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn")) %>% # ,  & Metrics != "MAPE"
+  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","stlar",  "Xgboost", "naive", "Lock","MRP",'Prophet',"RF","wn"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -637,7 +663,7 @@ result_q2 %>%
   ungroup() %>% 
   mutate(Flag = coalesce(Flag, "NA")) %>% 
   mutate(Flag = ordered(Flag, levels = c("NA","Red", "Green", "Blue"))) %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   filter(!is.na(Model)) %>%
   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
   geom_bar(stat = 'identity') +
@@ -719,7 +745,8 @@ GGally::ggpairs()
 ```
 
 ```{r Viz selected CFG}
-CFG.selected <- 'HDD_4TB_SATA6G_ISE_ESG'
+CFG.selected <- 'ESG_HDD_SAS12G_ISE_1_2TB_10K_2_5'
+# 'HDD_4TB_SATA6G_ISE_ESG'
 #'ESGP_HDD_SAS12G_4KN_FIPS140_6TB_7_2K_3_5' # One CFG has high errors with Xgboost.
 
 # HDD Weekly Sales
