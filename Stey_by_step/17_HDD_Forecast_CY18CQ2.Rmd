@@ -361,7 +361,9 @@ result_yao  %>%
 # 4 quarters from CY17CQ3-CY18CQ2 ####
 MRP_Quarterly <- read.csv('~/Yao_Excels/Quarterly MRP.csv')
 MRP_Quarterly$Model <- "MRP"
-rename(MRP_Quarterly,"Yao_QTY"="MRP","Quarter"="Calendar_Qtr") -> MRP_Quarterly
+MRP_Quarterly %>%
+  filter(!is.na(MRP)) %>%
+  rename("Yao_QTY"="MRP","Quarter"="Calendar_Qtr") -> MRP_Quarterly
 
 result_4q_yao_wMRP = yao_hdd %>% 
   filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
@@ -371,7 +373,7 @@ result_4q_yao_wMRP = yao_hdd %>%
   ungroup() %>%
   select(-Model) %>% 
   rename(HDD_Actual = Yao_QTY) %>% 
-  left_join(
+  full_join(
     yao_hdd %>% 
       filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
       group_by(CFG, Model,Quarter) %>% 
@@ -379,12 +381,12 @@ result_4q_yao_wMRP = yao_hdd %>%
       filter(!is.na(Yao_QTY) & Model != 'Actual') %>% 
       full_join(MRP_Quarterly)
   ) %>%
-  #filter(!is.na(HDD_Actual)) %>%
+  filter((CFG %in% yao_hdd$CFG) & (CFG %in% MRP_Quarterly$CFG)) %>%
   mutate(APE = calculate_ape(HDD_Actual,Yao_QTY), #abs(HDD_Actual - Yao_QTY) / HDD_Actual,
          AttainmentRate = calculate_attain(HDD_Actual,Yao_QTY))#HDD_Actual/Yao_QTY) 
 
 #result_4q_yao %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao
-
+result_4q_yao_wMRP %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao_wMRP
 # MAPE and weighted.MAPE #####
 # result_4q_yao  %>%
 #   group_by(Model) %>% 
@@ -401,7 +403,7 @@ result_4q_yao_wMRP = yao_hdd %>%
 #   scale_fill_economist() +
 #   theme_bw(base_size = 14) +
 #   labs(x = '', y = "Errors",
-#        title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("CY17CQ3-CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
+#        title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("CY17CQ3-CY18CQ2; Forecast 2 months ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
 #   theme(legend.position="bottom") #+
   #facet_wrap(~Metrics,scales = "free") #MAPEis too high to show.
 
@@ -412,8 +414,8 @@ result_4q_yao_wMRP  %>%
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c("ARIMA", "ets","Prophet", "RF", "stlar", "Xgboost", "naive","MRP") & Metrics=='MAPE') %>% #"wn", 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn") & Metrics=='MAPE') %>% #"wn", 
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -422,7 +424,7 @@ result_4q_yao_wMRP  %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "MAPE",
-       title = paste("HDD Quarterly MAPE"),subtitle = paste("Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") +
+       title = paste("HDD Quarterly MAPE"),subtitle = paste("Forecast 2 months ahead (",length(unique(result_4q_yao_wMRP$CFG)),'CFGs included )'),fill = "Metrics") +
   facet_wrap(~Quarter) + 
   theme(legend.position="none")
 
@@ -432,8 +434,8 @@ result_4q_yao_wMRP %>%
   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
   gather(Metrics,values,MAPE,weighted.MAPE) %>%
   ungroup() %>%
-  filter(Model %in% c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP") & Metrics=='weighted.MAPE') %>% #'wn','RF','Prophet',
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn") & Metrics=='weighted.MAPE') %>% #'wn','RF','Prophet',
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -442,7 +444,7 @@ result_4q_yao_wMRP %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Weighted MAPE",
-       title = paste("HDD Quarterly Weighted MAPE"),subtitle = paste("Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") +
+       title = paste("HDD Quarterly Weighted MAPE"),subtitle = paste("Forecast 2 months ahead (",length(unique(result_4q_yao_wMRP$CFG)),'CFGs included )'),fill = "Metrics") +
   facet_wrap(~Quarter) + 
   theme(legend.position="none")
 
@@ -468,7 +470,7 @@ result_4q_yao_wMRP  %>%
   ungroup() %>% 
   mutate(Flag = coalesce(Flag, "NA")) %>% 
   mutate(Flag = ordered(Flag, levels = c( "NA","Red", "Green", "Blue"))) %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive","MRP"))) %>%
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   filter(!is.na(Model)) %>%
   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
   geom_bar(stat = 'identity') +
@@ -478,7 +480,7 @@ result_4q_yao_wMRP  %>%
   scale_y_continuous(labels = scales::percent) +
   theme_hc() +
   theme(axis.text.x = element_text(size = 14)) +
-  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY17CQ3-CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'))
+  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY17CQ3-CY18CQ2; Forecast 2 months ahead (",length(unique(result_4q_yao_wMRP$CFG)),'CFGs included )'))
 
 # By quarter
 result_4q_yao_wMRP  %>%
@@ -488,7 +490,7 @@ result_4q_yao_wMRP  %>%
     AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
     AttainmentRate < 0.8~ 'Blue',
     AttainmentRate > 1.2~ 'Red')) %>%
-  summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) -> Accuracy.4q.byQuarter
+  summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")],na.rm=TRUE)/sum(HDD_Actual,na.rm=TRUE)) -> Accuracy.4q.byQuarter
 
 result_4q_yao_wMRP  %>%
   filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive','wn','RF','Prophet','MRP')) %>% #
@@ -503,7 +505,7 @@ result_4q_yao_wMRP  %>%
   ungroup() %>% 
   mutate(Flag = coalesce(Flag, "NA")) %>% 
   mutate(Flag = ordered(Flag, levels = c( "NA","Red", "Green", "Blue"))) %>% 
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','wn','RF','Prophet','MRP'))) %>%
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   filter(!is.na(Model)) %>%
   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
   geom_bar(stat = 'identity') +
@@ -513,15 +515,15 @@ result_4q_yao_wMRP  %>%
   scale_y_continuous(labels = scales::percent) +
   theme_hc() +
   theme(axis.text.x = element_text(size = 14)) +
-  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )')) +
+  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("Forecast 2 months ahead (",length(unique(result_4q_yao_wMRP$CFG)),'CFGs included )')) +
   facet_wrap(~Quarter)
 
 # Weighted Accuracy
 Accuracy.4q.byQuarter %>%
   gather(Metrics,values,Accuracy,weighted.Accuracy) %>%
   ungroup() %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast",'MRP') & Metrics=='weighted.Accuracy') %>% # 'RF','wn','Prophet',
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast",'MRP'))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn") & Metrics=='weighted.Accuracy') %>% # 'RF','wn','Prophet',
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock","MRP",'Prophet',"RF","wn"))) %>%
   ggplot(aes(x = Model , y = values, fill = Metrics)) +
   geom_bar(stat = 'identity', position = 'dodge') +
   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
@@ -530,7 +532,7 @@ Accuracy.4q.byQuarter %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Weighted Accuracy",
-       title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("Forecast 1 quarter ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
+       title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("Forecast 2 months ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
   theme(legend.position="none") +
   facet_wrap(~Quarter)
 
@@ -602,7 +604,7 @@ MAPE_q2 %>%
 #   scale_fill_economist() +
 #   theme_bw(base_size = 14) +
 #   labs(x = '', y = "Errors",
-#        title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+#        title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 2 months ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
 #   theme(legend.position="bottom")
 
 # Commodity "Accuracy"
@@ -629,7 +631,7 @@ EvalResults %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Weighted Accuracy",
-       title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+       title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("CY18CQ2; Forecast 2 months ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
   theme(legend.position="none")
 
 # ALL METRICS----
@@ -646,7 +648,7 @@ EvalResults %>%
   scale_fill_economist() +
   theme_bw(base_size = 14) +
   labs(x = '', y = "Values",
-       title = paste("HDD Quarterly Forecast Model Comparison"), subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
+       title = paste("HDD Quarterly Forecast Model Comparison"), subtitle = paste("CY18CQ2; Forecast 2 months ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
   facet_wrap(~Metrics, scales = "free") +
   theme(legend.position="bottom")
 
@@ -673,7 +675,7 @@ result_q2 %>%
   scale_y_continuous(labels = scales::percent) +
   theme_hc(base_size = 14) +
   theme(axis.text.x = element_text(size = 14)) +
-  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY18CQ2; Forecast 1 quarter ahead (",length(unique(result_q2$CFG)),'CFGs included )'))
+  labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY18CQ2; Forecast 2 months ahead (",length(unique(result_q2$CFG)),'CFGs included )'))
   
 write_excel_csv(EvalResults,"~/Yao_Excels/EvalResults_0816.csv")
 ```
@@ -688,17 +690,17 @@ stopImplicitCluster()
 ## relationship between volume and ape ####
 result_q2 %>%
   ungroup() %>% 
-  mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
-  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast")) %>% #,'Prophet','RF','wn',
+  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast","MRP",'Prophet',"RF","wn"))) %>%
+  filter(Model %in% c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast","MRP",'Prophet',"RF","wn")) %>% #,'Prophet','RF','wn',
   ggplot(aes(x = HDD_Actual, y = APE)) +
   facet_wrap(~Model) +
   geom_point() +
-  scale_y_continuous(labels = scales::percent, limits = c(0,5)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0,3)) +
   scale_x_continuous(labels = scales::comma) +
   theme_classic(base_size = 14) +
   labs(x = "CFG Total Volume", y = "Absolute Percentage Error",
-       title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 1 quarter ahead",
-       caption = "Error rate > 500% excluded from chart")
+       title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 2 months ahead",
+       caption = "Error rate > 300% excluded from chart")
 
 ## relationship between volume and attainment rate # I do not like this plot.
 # result_q2 %>%
@@ -712,7 +714,7 @@ result_q2 %>%
 #   scale_x_continuous(labels = scales::comma) +
 #   theme_classic(base_size = 14) +
 #   labs(x = "CFG Total Volume", y = "Attainment Rate",
-#        title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 1 quarter ahead",
+#        title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 2 months ahead",
 #        caption = "Error rate > 500% excluded from chart")
 
 # results joined with Attributes ####
@@ -730,7 +732,7 @@ result_q2.wAttr %>%
   scale_y_continuous(labels = scales::percent, limits = c(0,5)) +
   theme_classic(base_size = 14) +
   labs(x = "CFG Interface", y = "Absolute Percentage Error",
-       title = "Scatterplot of CFG Interface vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 1 quarter ahead",
+       title = "Scatterplot of CFG Interface vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 2 months ahead",
        caption = "Error rate > 500% excluded from chart")
 
 # Have a glance at all attributes ####
