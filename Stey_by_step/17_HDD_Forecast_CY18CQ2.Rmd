@@ -688,6 +688,7 @@ stopImplicitCluster()
 
 ```{r Analyze the errors}
 ## relationship between volume and ape ####
+result_q2$APE[result_q2$APE>3] <- 3
 result_q2 %>%
   ungroup() %>% 
   mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive', "Lock_Forecast","MRP",'Prophet',"RF","wn"))) %>%
@@ -700,7 +701,7 @@ result_q2 %>%
   theme_classic(base_size = 14) +
   labs(x = "CFG Total Volume", y = "Absolute Percentage Error",
        title = "Scatterplot of CFG volume vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 2 months ahead",
-       caption = "Error rate > 300% excluded from chart")
+       caption = "Error rate > 300% shown as 300%")
 
 ## relationship between volume and attainment rate # I do not like this plot.
 # result_q2 %>%
