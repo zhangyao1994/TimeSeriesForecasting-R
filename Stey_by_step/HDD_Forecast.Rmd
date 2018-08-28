@@ -251,8 +251,8 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
     # We need to again augment the time series signature to the test set.
     test_augmented <- test %>%
-      tk_augment_timeseries_signature()  %>%
-      cbind(Prophet=Prophet4Stack.test) %>%
+      tk_augment_timeseries_signature()  #%>%
+      # cbind(Prophet=Prophet4Stack.test) #%>%
       # cbind(ARIMA=ARIMA4Stack.test)
       #       TBATS=TBATS4Stack.test,
       #       ets=ets4Stack.test,
@@ -352,25 +352,11 @@ calculate_ape = function(y, yhat){
 }
 ```
 
-```{r Evaluation Stacking in q2}
-hdd_fcast_q2 %>%
-  gather(Model,Fcast_QTY,ARIMA:Stack) %>%
-  mutate(APE = calculate_ape(Actual,Fcast_QTY), 
-         AttainmentRate = calculate_attain(Actual,Fcast_QTY)) %>%
-  select(CFG,Model,AttainmentRate,Actual) %>%
-  mutate(Attain_Flag = case_when(
-    AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
-    AttainmentRate < 0.8~ 'Blue',
-    AttainmentRate > 1.2~ 'Red')) %>%
-  group_by(Model) %>%
-  summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(Actual[which(Attain_Flag=="Green")])/sum(Actual, na.rm = TRUE)) -> Accuracy.Results
-```
 
 ```{r Error Calculation}
-yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0824_3mon.feather")
+yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0816.feather")
 
 # 0816 Xgboost is not bad.
-
 
 # All quarters from CY17CQ1-CY18CQ2 ####
 result_yao = yao_hdd %>%
@@ -391,42 +377,6 @@ result_yao = yao_hdd %>%
          AttainmentRate = calculate_attain(HDD_Actual,Fcast_QTY))#HDD_Actual/Fcast_QTY)
 # 104 CFGs above
 
-# result_yao  %>%
-#   group_by(Model) %>% 
-#   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) 
-
-# MAPE and weighted.MAPE #####
-# result_yao  %>%
-#   group_by(Model,Quarter) %>% 
-#   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
-#   gather(Metrics,values,MAPE,weighted.MAPE) %>%
-#   ungroup() %>%
-#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive')) %>%
-#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
-#   ggplot(aes(x = Model , y = values, fill = Metrics)) +
-#   geom_bar(stat = 'identity', position = 'dodge') +
-#   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
-#             size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
-#   scale_y_continuous(labels = scales::percent) +
-#   scale_fill_economist() +
-#   theme_bw(base_size = 14) +
-#   labs(x = '', y = "Errors",
-#        title = paste("HDD Quarterly CFG MAPE (",length(unique(result_yao$CFG)),'CFGs included )'),fill = "Metrics") +
-#   facet_wrap(~Quarter) + 
-#   theme(legend.position="bottom")
-
-# Compare to Lock and MRP in CY18CQ2 ####
-# All_fcast.wLock_CY18CQ2 <- yao_hdd %>% 
-#   filter(Quarter == 'CY18CQ2') %>% 
-#   group_by(CFG, Model) %>% 
-#   summarise(HDD_QTY = sum(HDD_QTY, na.rm = TRUE)) %>%
-#   left_join(Lock_Guidance_CY18CQ2_Results %>% 
-#               filter(ITM_TYPE == 'HDD') %>%
-#               select(CFG,Lock_Forecast) %>%
-#               gather(Model,HDD_QTY,Lock_Forecast))
-
-#write.csv(All_fcast.wLock_CY18CQ2,"~/Yao_Excels/All_fcast.wLock_CY18CQ2.csv")
-
 yao_hdd %>% 
   filter(Quarter == 'CY18CQ2') %>% 
   group_by(CFG, Model) %>% 
@@ -441,11 +391,6 @@ yao_hdd %>%
       summarise(Fcast_QTY = sum(HDD_QTY, na.rm = TRUE)) %>% 
       filter(!is.na(Fcast_QTY) & Model != 'Actual'), by = 'CFG') %>%
   spread(Model,Fcast_QTY) -> Yao_HDD_QTY # 87 CFGs
-
-# MRP_CY18CQ2 <- read.csv('~/Yao_Excels/CY18CQ2 MRP FY19Q1W1 Version.csv') # This is not right
-# MRP_CY18CQ2 %>%
-#   group_by(CFG) %>%
-#   summarise(MRP = sum(MRP, na.rm = TRUE)) -> MRP_CY18CQ2_Sum # 176 CFGs
 
 # 4 quarters from CY17CQ3-CY18CQ2 ####
 MRP_Quarterly <- read.csv('~/Yao_Excels/Quarterly MRP(1).csv')
@@ -469,37 +414,6 @@ Lock_Guidance_CY18CQ2_Results %>%
          AttainmentRate = calculate_attain(HDD_Actual,HDD_QTY)) -> result_q2 # 53 CFGs
 result_q2$Model[result_q2$Model=="Lock_Forecast"] <- "Lock"
 
-# Lock_Guidance_CY18CQ2_Results %>% 
-#   filter(ITM_TYPE == 'HDD') %>%
-#   select(CFG,Lock_Forecast) %>%
-#   left_join(Yao_HDD_QTY, by = 'CFG') %>%
-#   left_join(MRP_CY18CQ2_Sum,by = 'CFG') %>%
-#   filter(!is.na(HDD_Actual) & !is.na(Lock_Forecast)) %>%
-#   gather(Model,HDD_QTY,-CFG,-HDD_Actual) %>%
-#   mutate(APE = calculate_ape(HDD_Actual,HDD_QTY), #abs(HDD_Actual - Fcast_QTY) / HDD_Actual,
-#          AttainmentRate = calculate_attain(HDD_Actual,HDD_QTY))  -> MAPE_q2 # 53
-# 
-# MAPE_q2 %>%
-#   group_by(Model) %>%
-#   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> MAPE.results
-# MAPE.results$Model[MAPE.results$Model=="Lock_Forecast"] <- "Lock"
-
-# MAPE and WMAPE
-# MAPE.results %>%
-#   gather(Metrics,values,MAPE,weighted.MAPE) %>%
-#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast","MRP")) %>%
-#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast",'MRP'))) %>%
-#   ggplot(aes(x = Model , y = values, fill = Metrics)) +
-#   geom_bar(stat = 'identity', position = 'dodge') +
-#   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
-#             size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
-#   scale_y_continuous(labels = scales::percent) +
-#   scale_fill_economist() +
-#   theme_bw(base_size = 14) +
-#   labs(x = '', y = "Errors",
-#        title = paste("HDD Quarterly CFG MAPE"), subtitle = paste("CY18CQ2; Forecast 3 months ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
-#   theme(legend.position="bottom")
-
 # Commodity "Accuracy"
 result_q2$AttainmentRate[result_q2$AttainmentRate>5] <- 5
 
@@ -514,22 +428,6 @@ result_q2 %>%
             weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual),
             MAPE = mean(APE, na.rm = TRUE),
             weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) -> EvalResults
-
-# Weighted Accuracy
-# EvalResults %>%
-#   gather(Metrics,values,Accuracy:weighted.MAPE) %>%
-#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast","MRP") & Metrics=='weighted.Accuracy') %>%
-#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast","MRP"))) %>%
-#   ggplot(aes(x = Model , y = values, fill = Metrics)) +
-#   geom_bar(stat = 'identity', position = 'dodge') +
-#   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'white', fontface = 'bold',
-#             size = 5, position = position_dodge(width = 0.8), vjust = 1) +
-#   scale_y_continuous(labels = scales::percent) +
-#   scale_fill_economist() +
-#   theme_bw(base_size = 14) +
-#   labs(x = '', y = "Weighted Accuracy",
-#        title = paste("HDD Quarterly CFG Weighted Accuracy"), subtitle = paste("CY18CQ2; Forecast 3 months ahead (",length(unique(MAPE_q2$CFG)),'CFGs included )'),fill = "Metrics") + 
-#   theme(legend.position="none")
 
 # ALL METRICS----
 EvalResults$Model[EvalResults$Model=="Lock_Forecast"] <- "Lock"
@@ -575,8 +473,6 @@ result_q2 %>%
   theme(axis.text.x = element_text(size = 14)) +
   labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY18CQ2; Forecast 3 months ahead (",length(unique(result_q2$CFG)),'CFGs included )'))
 
-
-
 result_4q_yao_wMRP = yao_hdd %>% 
   filter(Quarter %in% c('CY17CQ3','CY17CQ4','CY18CQ1','CY18CQ2')) %>% 
   group_by(CFG, Model,Quarter) %>% 
@@ -603,25 +499,6 @@ result_4q_yao_wMRP$Model <- as.factor(result_4q_yao_wMRP$Model)
 
 # result_4q_yao %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao
 result_4q_yao_wMRP %>% filter(CFG %in% result_q2$CFG) -> result_4q_yao_wMRP
-# MAPE and weighted.MAPE #####
-# result_4q_yao  %>%
-#   group_by(Model) %>% 
-#   summarise(MAPE = mean(APE, na.rm = TRUE),weighted.MAPE = weighted.mean(APE,HDD_Actual, na.rm = TRUE)) %>%
-#   gather(Metrics,values,MAPE,weighted.MAPE) %>%
-#   ungroup() %>%
-#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive') & Metrics=='weighted.MAPE') %>% # 
-#   mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive"))) %>%
-#   ggplot(aes(x = Model , y = values, fill = Metrics)) +
-#   geom_bar(stat = 'identity', position = 'dodge') +
-#   geom_text(aes(label = paste0(round(100*values), '%')), colour = 'grey', fontface = 'bold',
-#             size = 3.5, position = position_dodge(width = 0.8), vjust = 1) +
-#   scale_y_continuous(labels = scales::percent) +
-#   scale_fill_economist() +
-#   theme_bw(base_size = 14) +
-#   labs(x = '', y = "Errors",
-#        title = paste("HDD Quarterly CFG MAPE"),subtitle = paste("CY17CQ3-CY18CQ2; Forecast 3 months ahead (",length(unique(result_4q_yao$CFG)),'CFGs included )'),fill = "Metrics") + 
-#   theme(legend.position="bottom") #+
-  #facet_wrap(~Metrics,scales = "free") #MAPEis too high to show.
 
 # By quarter ----
 # MAPE # Too high to show...
@@ -673,30 +550,6 @@ result_4q_yao_wMRP  %>%
     AttainmentRate < 0.8~ 'Blue',
     AttainmentRate > 1.2~ 'Red')) %>%
   summarise(Accuracy=length(which(Attain_Flag=="Green"))/length(Attain_Flag),weighted.Accuracy=sum(HDD_Actual[which(Attain_Flag=="Green")])/sum(HDD_Actual)) -> Accuracy.4q
-
-# result_4q_yao_wMRP  %>%
-#   select(CFG,Model,AttainmentRate,HDD_Actual) %>%
-#   mutate(Flag = case_when(
-#     AttainmentRate >= 0.8 & AttainmentRate <= 1.2 ~ 'Green',
-#     AttainmentRate < 0.8 ~ 'Blue',
-#     AttainmentRate > 1.2 ~ 'Red')) %>%
-#   group_by(Model, Flag) %>% 
-#   summarise(n_cfg = n_distinct(CFG)) %>% 
-#   mutate(n_cfg_ptg = n_cfg/sum(n_cfg)) %>% 
-#   ungroup() %>% 
-#   mutate(Flag = coalesce(Flag, "NA")) %>% 
-#   mutate(Flag = ordered(Flag, levels = c( "NA","Red", "Green", "Blue"))) %>% 
-#   mutate(Model = ordered(Model, levels = c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP"))) %>%
-#   filter(!is.na(Model)) %>%
-#   ggplot(aes(x = Model, y = n_cfg_ptg, fill = Flag)) +
-#   geom_bar(stat = 'identity') +
-#   geom_text(aes(label = paste0(round(100*n_cfg_ptg), '%')), colour = 'white', fontface = 'bold',
-#             size = 4, position = position_stack(), vjust = 1) +
-#   scale_fill_manual(values = c( "grey","#E15759", "#59A14F","#4E79A7")) +
-#   scale_y_continuous(labels = scales::percent) +
-#   theme_hc() +
-#   theme(axis.text.x = element_text(size = 14)) +
-#   labs(x = '', y = '% CFG Quantity', title = "Model Attainment and 'Accuracy'", subtitle = paste("CY17CQ3-CY18CQ2; Forecast 3 months ahead (",length(unique(result_4q_yao_wMRP$CFG)),'CFGs included )'))
 
 # By quarter
 result_4q_yao_wMRP  %>%
@@ -834,177 +687,7 @@ result_4q_yao_wMRP %>%
   labs(x = "CFG Total Volume", y = "Attainment Rate",
        title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY18CQ2; Forecast 3 months ahead",
        caption = "Attainment Rate > 5 shown as 5")
-
-result_4q_yao_wMRP %>%
-  ungroup() %>%
-  filter(Quarter == "CY18CQ1") %>%
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','Prophet',"RF","wn","MRP"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0.8, ymax = 1.2,
-            fill = 'green', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 1.2, ymax = 5,
-            fill = 'orange', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0, ymax = 0.8,
-            fill = 'blue', alpha = 0.005) +
-            #fill = palette_light()[[3]], alpha = 0.01) +
-  facet_wrap(~Model) +
-  geom_point() +
-  # scale_y_continuous(limits = c(0,2)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY18CQ1; Forecast 3 months ahead",
-       caption = "Attainment Rate > 5 shown as 5")
-
-
-result_4q_yao_wMRP %>%
-  ungroup() %>%
-  filter(Quarter == "CY17CQ4") %>%
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','Prophet',"RF","wn","MRP"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0.8, ymax = 1.2,
-            fill = 'green', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 1.2, ymax = 5,
-            fill = 'orange', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0, ymax = 0.8,
-            fill = 'blue', alpha = 0.005) +
-  facet_wrap(~Model) +
-  geom_point() +
-  # scale_y_continuous(limits = c(0,2)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY17CQ4; Forecast 3 months ahead",
-       caption = "Attainment Rate > 5 shown as 5")
-
-result_4q_yao_wMRP %>%
-  ungroup() %>%
-  filter(Quarter == "CY17CQ3") %>%
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','Prophet',"RF","wn","MRP"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0.8, ymax = 1.2,
-            fill = 'green', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 1.2, ymax = 5,
-            fill = 'orange', alpha = 0.005) +
-  geom_rect(xmin = min(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_4q_yao_wMRP$HDD_Actual,na.rm = TRUE),
-            ymin = 0, ymax = 0.8,
-            fill = 'blue', alpha = 0.005) +
-  facet_wrap(~Model) +
-  geom_point() +
-  # scale_y_continuous(limits = c(0,2)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY17CQ3; Forecast 3 months ahead",
-       caption = "Attainment Rate > 5 shown as 5")
-
-
-# results joined with Attributes ####
-# cfg_attr_group = read.csv('~/Yao_Excels/HDD SSD Memory CFG Attributes.csv')
-# result_q2 %>% 
-#   left_join(cfg_attr_group %>% select(CFG, Interface, Interface_w_Speed, Capacity, Drive_Form_Factor, Drive_Entrypted_Code, HDD_RPM, HDD_Data_Sector_Format)) -> result_q2.wAttr
-# 
-# ## relationship between Interface and ape ####
-# result_q2.wAttr %>%
-#     mutate(Model = ordered(Model, levels = c("ARIMA", "ets","Prophet", "RF", "stlar", "wn", "Xgboost", "naive", "Lock_Forecast"))) %>%
-#   filter(Model %in% c('ARIMA','ets','Prophet','RF','stlar','wn','Xgboost','naive', "Lock_Forecast")) %>%
-#   ggplot(aes(x = Interface, y = APE)) +
-#   facet_wrap(~Model) +
-#   geom_dotplot(binaxis = "y", stackdir = "center") +
-#   scale_y_continuous(labels = scales::percent, limits = c(0,5)) +
-#   theme_classic(base_size = 14) +
-#   labs(x = "CFG Interface", y = "Absolute Percentage Error",
-#        title = "Scatterplot of CFG Interface vs error rate", subtitle = "Test quarter CY18CQ2; Forecast 3 months ahead",
-#        caption = "Error rate > 500% excluded from chart")
-# 
-# # Have a glance at all attributes ####
-# result_q2.wAttr %>%
-#   filter(Model %in% c('Lock_Forecast')) %>%
-#   filter(APE<=5) %>%
-#   mutate(Capacity = as.numeric(Capacity)) %>%
-#   select(HDD_Actual,APE,AttainmentRate,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity) %>%
-# GGally::ggpairs()
-
-# Lock_Forecast shows different performance on different Interface_w_Speed, Data_Entrypted_Code, and Data_Sector_Format, but Xgboost does not.
 ```
-
-```{r Viz Attainment Rate in CY17CQ1-2}
-result_yao$AttainmentRate[result_yao$AttainmentRate>5] <- 5
-result_yao %>%
-  ungroup() %>%
-  filter(Quarter == "CY17CQ2") %>%
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','Prophet',"RF","wn","MRP"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 0.8, ymax = 1.2,
-            fill = 'green', alpha = 0.005) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 1.2, ymax = 5,
-            fill = 'orange', alpha = 0.005) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 0, ymax = 0.8,
-            fill = 'blue', alpha = 0.005) +
-  facet_wrap(~Model) +
-  geom_point() +
-  # scale_y_continuous(limits = c(0,2)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY17CQ2; Forecast 3 months ahead",
-       caption = "Attainment Rate > 5 shown as 5")
-
-result_yao %>%
-  ungroup() %>%
-  filter(Quarter == "CY17CQ1") %>%
-  mutate(Model = ordered(Model, levels = c('ARIMA','ets','stlar','Xgboost','naive','Prophet',"RF","wn","MRP"))) %>%
-  filter(Model %in% c('ARIMA','ets','Prophet','stlar',"wn","RF", 'Xgboost','naive',"Lock","MRP")) %>%
-  ggplot(aes(x = HDD_Actual, y = AttainmentRate)) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 0.8, ymax = 1.2,
-            fill = 'green', alpha = 0.005) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 1.2, ymax = 5,
-            fill = 'orange', alpha = 0.005) +
-  geom_rect(xmin = min(result_yao$HDD_Actual,na.rm = TRUE),
-            xmax = max(result_yao$HDD_Actual,na.rm = TRUE),
-            ymin = 0, ymax = 0.8,
-            fill = 'blue', alpha = 0.005) +
-  facet_wrap(~Model) +
-  geom_point() +
-  # scale_y_continuous(limits = c(0,2)) +
-  scale_x_continuous(labels = scales::comma) +
-  theme_classic(base_size = 14) +
-  labs(x = "CFG Total Volume", y = "Attainment Rate",
-       title = "Scatterplot of CFG volume vs attainment rate", subtitle = "Test quarter CY17CQ1; Forecast 3 months ahead",
-       caption = "Attainment Rate > 5 shown as 5")
-```
-
 
 ```{r Viz selected CFG}
 CFG.selected <- 'ESG_HDD_SAS12G_ISE_512E_10TB_7_2K_3_5'
