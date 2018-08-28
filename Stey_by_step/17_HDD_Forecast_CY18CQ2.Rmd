@@ -251,8 +251,8 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
     # We need to again augment the time series signature to the test set.
     test_augmented <- test %>%
-      tk_augment_timeseries_signature()  %>%
-      cbind(Prophet=Prophet4Stack.test) %>%
+      tk_augment_timeseries_signature()  #%>%
+      #cbind(Prophet=Prophet4Stack.test) %>%
       # cbind(ARIMA=ARIMA4Stack.test)
       #       TBATS=TBATS4Stack.test,
       #       ets=ets4Stack.test,
