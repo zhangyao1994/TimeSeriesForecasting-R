@@ -1,7 +1,7 @@
 ---
-title: "HDD Forecast Cross-Validation and CY18CQ2 compared to Lock"
+title: "HDD Forecast Cross-Validation"
 author: "Yao"
-date: "August 15, 2018"
+date: "August 28, 2018"
 output: html_document
 ---
 
@@ -58,18 +58,6 @@ Got Lock Guidance CY18CQ2 Results from Cinkie.
 Lock_Guidance_CY18CQ2_Results<- read.csv("~/Yao_Excels/Lock Guidance CY18CQ2 Results(1).csv")
 ```
 
-```{r Analyze the Accuracy of Lock_Guidance, eval=FALSE, include=FALSE}
-# The Actual in this csv file is not reliable.
-Lock_Guidance_CY18CQ2_Results %>% 
-  filter(ITM_TYPE=="HDD" & Lock_APE<=5) %>%
-  select(Actual,Lock_APE,Interface_w_Speed,Drive_Form_Factor,Drive_Entrypted_Code,HDD_RPM,HDD_Data_Sector_Format,Capacity_Num) %>%
-GGally::ggpairs()
-```
-
-Low Actual Volume has  some super high APEs. APEs of high volume Actual are relatively lower.
-
-If I want to forecast on Clusters before CFGs, I would use Volume and Interface.
-
 To compare my forecast results to the Lock Guidance, I will forecast for each CFG first.
 
 ## HDD Weekly Demand Forecasting for each CFG
@@ -86,14 +74,17 @@ qtr_mo_tbl <- commodity.data.selected %>%
   distinct(Calendar_Qtr, Fiscal_Mo) %>%
   arrange(Fiscal_Mo)
   
+# Extract the Quarter-Month-Week table
 qtr_mo_wk_tbl <- commodity.data.selected %>% 
   distinct(Calendar_Qtr, Fiscal_Mo, Fiscal_Wk_End_Date) %>%
   arrange(Fiscal_Mo)
 ```
 
-```{r MRP data for the Stacking Model}
+```{r MRP data for comparison and also for the Stacking Model}
 WeeklyMRP <- read.csv('~/Yao_Excels/Weekly MRP.csv')
+# make the CFG names match our data
 WeeklyMRP$CFG = as.factor(substr(WeeklyMRP$CFG,1,nchar(as.character(WeeklyMRP$CFG))-4))
+# Factor cannot be compared but I want to use filter to filter the data before a certain quarter
 WeeklyMRP$Calendar_Qtr <- as.character(WeeklyMRP$Calendar_Qtr)
 ```
 
@@ -109,13 +100,13 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     # ----------------------Split into training and test sets---------------------- ######
 
     train_end_mo = qtr_mo_tbl$Fiscal_Mo[min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr)) - MonthAhead]
+    
     train_bein_mon_idx <- min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr)) - MonthAhead-train_mo_num
     if (train_bein_mon_idx<=0){
       train_begin_mo = qtr_mo_tbl$Fiscal_Mo[1]
     } else {
       train_begin_mo = qtr_mo_tbl$Fiscal_Mo[train_bein_mon_idx]
     }
-    
     test_begin_mon = qtr_mo_tbl$Fiscal_Mo[min(which(qtr_mo_tbl$Calendar_Qtr == Fcast_Qtr))]
     
     wk_ahead = nrow(filter(qtr_mo_wk_tbl,Fiscal_Mo>=train_end_mo & Fiscal_Mo<test_begin_mon))
@@ -165,16 +156,16 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     fit <- tbats(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
     TBATS_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'TBATS',tail(fcast$mean,Fcast_Wk_num))
-    TBATS4Stack.train <- fit$fitted
-    TBATS4Stack.test <- tail(fcast$mean,Fcast_Wk_num)
+    TBATS4Stack.train <- as.numeric(fit$fitted)
+    TBATS4Stack.test <- as.numeric(tail(fcast$mean,Fcast_Wk_num))
 
     
     # ----------------------ARIMA---------------------- ######
     fit <- auto.arima(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
     ARIMA_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ARIMA',tail(fcast$mean,Fcast_Wk_num))
-    ARIMA4Stack.train <- fit$fitted
-    ARIMA4Stack.test <- tail(fcast$mean,Fcast_Wk_num)
+    ARIMA4Stack.train <- as.numeric(fit$fitted)
+    ARIMA4Stack.test <- as.numeric(tail(fcast$mean,Fcast_Wk_num))
     
     # ----------------------Prophet---------------------- ######
     m <- prophet(train)
@@ -182,14 +173,14 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     fcast <- predict(m, future)
     Prophet_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'Prophet',tail(fcast$yhat,Fcast_Wk_num))
     Prophet4Stack.train <- head(fcast$yhat,nrow(train))
-    Prophet4Stack.test <- tail(fcast$yhat,nrow(test))
+    Prophet4Stack.test <- tail(fcast$yhat,Fcast_Wk_num)
         
     # ----------------------ets---------------------- ######
     fit <- ets(HDD.ts)
     fcast <- forecast(fit,h=forecastPeriodLen)
     ets_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,'ets',tail(fcast$mean,Fcast_Wk_num))
-    ets4Stack.train <- fit$fitted
-    ets4Stack.test <- tail(fcast$mean,Fcast_Wk_num)
+    ets4Stack.train <- as.numeric(fit$fitted)
+    ets4Stack.test <- as.numeric(tail(fcast$mean,Fcast_Wk_num))
    
     # ----------------------rw: random walk---------------------- ######
     rw_fit <- rwf(HDD.ts,drift=FALSE, h=forecastPeriodLen)
@@ -229,18 +220,18 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     # Add time series signature
     train_augmented <- train %>%
       tk_augment_timeseries_signature()
-    # maunually drop unvalid variables
+    # Prepare the Naive data
     if (nrow(train)>forecastPeriodLen) {
       Naive_Row=c(rep(0,forecastPeriodLen),head(train$y,nrow(train)-forecastPeriodLen))
     } else {Naive_Row=rep(0,nrow(train))}
-    temp <-
-      train_augmented %>% select(-wday.lbl,-month.lbl,-diff) # %>% 
-      # cbind(Prophet=Prophet4Stack.train, 
-      #       ARIMA=ARIMA4Stack.train,
-      #       TBATS=TBATS4Stack.train,
-      #       ets=ets4Stack.train,
-      #       #MRP=MRP4Stack.train,
-      #       Naive=Naive_Row)
+    # maunually drop unvalid variables
+    temp <- train_augmented %>% select(-wday.lbl,-month.lbl,-diff) %>% 
+      cbind(Prophet=Prophet4Stack.train,
+            ARIMA=ARIMA4Stack.train,
+            TBATS=TBATS4Stack.train,
+            ets=ets4Stack.train,
+            MRP=c(rep(0,nrow(train)-length(MRP4Stack.train)),MRP4Stack.train),
+            Naive=Naive_Row)
 
     # Remove the column with only one value
     if (nrow(temp)>1) {
@@ -249,15 +240,21 @@ oneCFG_forecast <- function(oneCFG.data, Fcast_Qtrs, MonthAhead = 3, train_mo_nu
     
     # Model using the augmented features
     fit <- lm(y ~ ., data = na.omit(temp)) # Will need to try using less number of features! Avoid overfitting.
+    
+    # Prepare the Naive data
+    if (nrow(train)>nrow(test)) {
+      Naive_Row=tail(train$y,Fcast_Wk_num)
+    } else {Naive_Row=c(train$y,rep(0,Fcast_Wk_num-nrow(train)))}
+    
     # We need to again augment the time series signature to the test set.
     test_augmented <- test %>%
       tk_augment_timeseries_signature()  %>%
-      cbind(Prophet=Prophet4Stack.test) %>%
-      # cbind(ARIMA=ARIMA4Stack.test)
-      #       TBATS=TBATS4Stack.test,
-      #       ets=ets4Stack.test,
-      #       #MRP=MRP4Stack.test,
-      #       Naive=ifelse(nrow(train)>nrow(test),tail(train$y,nrow(test)),c(train$y,rep(0,nrow(test)-nrow(train)))))
+      cbind(Prophet=Prophet4Stack.test,
+            ARIMA=ARIMA4Stack.test,
+            TBATS=TBATS4Stack.test,
+            ets=ets4Stack.test,
+            MRP=c(rep(0,max(Fcast_Wk_num-length(MRP4Stack.test),0)),MRP4Stack.test),
+            Naive=Naive_Row)
     
     yhat_test <- predict(fit, newdata = test_augmented)
     lm_fcast <- c(CFGgroups[i_CFG],Fcast_Qtr,tail(yhat_test,Fcast_Wk_num))
@@ -304,6 +301,7 @@ Fcast_Qtrs <- c("CY17CQ3","CY17CQ4","CY18CQ1","CY18CQ2") # The quarters that you
 #         "CY17CQ1","CY17CQ2", ,"CY18CQ3","CY18CQ4"
 
 Comb_fcast <- foreach(i_CFG=1:len, .combine=rbind,  .packages=c('tidyverse','forecast','forecTheta','seer','Rcpp','ggthemes','lubridate','tidyquant','timetk','prophet','randomForest','party','quantmod','TTR','xgboost')) %dopar% {
+  if (i_CFG==6) {next} # Lack of one week data in CY18CQ2
   # Forecast for each CFG
   oneCFG.data <- commodity.data.selected %>% filter(CFG==CFGgroups[i_CFG])
   oneCFG_fcast <- oneCFG_forecast(oneCFG.data,Fcast_Qtrs)
@@ -369,8 +367,9 @@ hdd_fcast_q2 %>%
 ```{r Error Calculation}
 yao_hdd = read_feather("~/Yao_Rdata/All_fcast_CV_Cal_Qtr_0824_3mon.feather")
 
+# 0814 is bad.
 # 0816 Xgboost is not bad.
-
+# 0820 Xgboost embedded with ARIMA
 
 # All quarters from CY17CQ1-CY18CQ2 ####
 result_yao = yao_hdd %>%
